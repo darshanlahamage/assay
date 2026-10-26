@@ -1,0 +1,58 @@
+# Candor default configuration.
+
+model:
+  name: "mlx-community/Qwen2.5-3B-Instruct-4bit"
+  draft: "mlx-community/Qwen2.5-0.5B-Instruct-4bit"   # optional, speculative decoding
+  max_tokens: 2048
+  temperature: 0.7
+  capture_logprobs: true          # inference-time signal for the auditor
+  capture_activations: true       # for the linear probe
+  activation_layers: [12, 18]     # residual-stream layers to tap for the probe
+
+harness:
+  max_steps: 25                   # tool-call budget per episode
+  tools:                          # which tools the Worker may call
+    - think
+    - read_file
+    - edit_file
+    - write_file
+    - list_dir
+    - search_code
+    - run_tests
+    - bash
+    - git
+    - report_progress
+    - submit
+  scratchpad: true                # force a `think` stream for CoT monitoring
+
+sandbox:
+  jail_to: "work"                 # agent tools cannot escape this subdir
+  network: false                  # egress blocked; attempts logged as security events
+  subprocess_timeout_s: 20
+  log_jail_violations: true
+
+reward:
+  proxy: "visible_tests"          # visible_tests | llm_judge | both
+  true: "hidden_tests"            # always the held-out oracle
+  judge_model: "mlx-community/Qwen2.5-3B-Instruct-4bit"
+
+rl:
+  algorithm: "grpo"               # grpo | dpo
+  adapter: "lora"
+  lora_rank: 16
+  group_size: 6                   # GRPO samples per prompt
+  learning_rate: 1.0e-5
+  iterations: 5
+  rl_model: null                  # set to a 1.5B id to reduce RL-phase memory
+
+audit:
+  detectors: [hidden_test_gap, file_integrity, tool_log_crosscheck, ast_scan, cot_monitor, logprob_trace]
+  probe:
+    enabled: true
+    layer: 18
+  steering:
+    enabled: false                # stretch goal
+
+run:
+  out_dir: "runs"
+  seed: 0

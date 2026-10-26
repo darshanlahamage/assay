@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+
+# Models / weights / adapters (never commit)
+models/
+weights/
+adapters/
+*.safetensors
+*.gguf
+*.npz
+
+# Runs / outputs
+runs/
+outputs/
+*.jsonl
+!benchmark/**/*.jsonl
+logs/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Sandbox scratch
+.candor_sandbox/
+eval_tmp/

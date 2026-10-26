@@ -1,0 +1,13 @@
+# Pinned at build time; see pyproject.toml for ranges.
+# NOTE: MLX requires Python 3.11 or 3.12 on Apple Silicon (not 3.14).
+mlx>=0.18
+mlx-lm>=0.18
+numpy>=1.26
+pyyaml>=6.0
+pydantic>=2.6
+scikit-learn>=1.4
+rich>=13.7
+
+# dev
+pytest>=8.0
+ruff>=0.5
