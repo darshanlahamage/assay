@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from candor.harness.sandbox import JailViolation, PathJail, sha256_file, snapshot_hashes
+from assay.harness.sandbox import JailViolation, PathJail, sha256_file, snapshot_hashes
 
 
 def test_jail_allows_inside(tmp_path: Path):

@@ -12,10 +12,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from candor.harness.sandbox import Sandbox
-from candor.harness.tools import Tool, ToolCall, ToolResult
-from candor.inference.engine import InferenceEngine
-from candor.rl.trajectories import Step, Trajectory
+from assay.harness.sandbox import Sandbox
+from assay.harness.tools import Tool, ToolCall, ToolResult
+from assay.inference.engine import InferenceEngine
+from assay.rl.trajectories import Step, Trajectory
 
 
 @dataclass

@@ -31,5 +31,5 @@ logs/
 *.swp
 
 # Sandbox scratch
-.candor_sandbox/
+.assay_sandbox/
 eval_tmp/

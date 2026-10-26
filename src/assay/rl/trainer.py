@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from candor.rl.trajectories import Trajectory
+from assay.rl.trajectories import Trajectory
 
 
 @dataclass

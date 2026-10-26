@@ -1,13 +1,13 @@
-# Candor
+# Assay
 
 **A local testbed and interpretability toolkit for reward hacking in self-improving agents.**
 
 A sandboxed software-engineering agent improves itself with on-device reinforcement learning (MLX,
 Apple Silicon), learns to **cheat** to win reward — tampering with tests, exfiltrating from its
-sandbox, and prompt-injecting its own LLM judge — and Candor **detects, tracks, and explains** every
+sandbox, and prompt-injecting its own LLM judge — and Assay **detects, tracks, and explains** every
 exploit using signals only available when you run the model weights yourself.
 
-> Reward-hacking research mostly lives inside frontier labs on cloud infra. Candor makes it
+> Reward-hacking research mostly lives inside frontier labs on cloud infra. Assay makes it
 > **reproducible on a 24 GB Mac**, with a labeled exploit benchmark and an inference-level
 > interpretability stack.
 
@@ -43,19 +43,19 @@ python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Run the agent on one benchmark task (once the harness is implemented):
-candor run --task benchmark/task_001_config_parser
+assay run --task benchmark/task_001_config_parser
 
 # Run the self-improvement loop and watch R_proxy diverge from R_true:
-candor train --suite benchmark --iterations 5
+assay train --suite benchmark --iterations 5
 
 # Produce the results table + plots:
-candor eval --ledger runs/latest/ledger.jsonl
+assay eval --ledger runs/latest/ledger.jsonl
 ```
 
 ## Layout
 
 ```
-src/candor/
+src/assay/
   harness/    ReAct agent loop, tool registry, sandbox (path jail + subprocess)
   inference/  MLX engine: generation + logprob/activation capture
   rl/         GRPO/DPO LoRA trainer, trajectories, dual reward

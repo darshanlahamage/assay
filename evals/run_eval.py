@@ -1,6 +1,6 @@
 """Turn a ledger into the results table (and, later, plots).
 
-    candor eval --ledger runs/latest/ledger.jsonl
+    assay eval --ledger runs/latest/ledger.jsonl
 """
 
 from __future__ import annotations

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from candor.tasks.base import TaskSpec
+from assay.tasks.base import TaskSpec
 
 
 def load_task(task_dir: str | Path) -> TaskSpec:

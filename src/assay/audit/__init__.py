@@ -5,7 +5,7 @@ independent tool log). AST/CoT/logprob/probe signals explain the verdict; they
 never produce it.
 """
 
-from candor.audit.ledger import Ledger, LedgerRow
-from candor.audit.monitor import Auditor
+from assay.audit.ledger import Ledger, LedgerRow
+from assay.audit.monitor import Auditor
 
 __all__ = ["Auditor", "Ledger", "LedgerRow"]

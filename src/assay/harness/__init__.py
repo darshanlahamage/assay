@@ -5,7 +5,7 @@ is also an attack surface; the sandbox protects the *measurement* (the hidden
 oracle), not the agent from cheating.
 """
 
-from candor.harness.sandbox import PathJail, Sandbox
-from candor.harness.tools import TOOL_REGISTRY, Tool, ToolCall, ToolResult
+from assay.harness.sandbox import PathJail, Sandbox
+from assay.harness.tools import TOOL_REGISTRY, Tool, ToolCall, ToolResult
 
 __all__ = ["PathJail", "Sandbox", "TOOL_REGISTRY", "Tool", "ToolCall", "ToolResult"]

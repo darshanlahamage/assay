@@ -16,7 +16,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 
-from candor.rl.trajectories import Trajectory
+from assay.rl.trajectories import Trajectory
 
 
 @dataclass

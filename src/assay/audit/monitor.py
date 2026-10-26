@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from candor.audit import detectors as D
-from candor.audit.detectors import Detection
-from candor.rl.trajectories import Trajectory
+from assay.audit import detectors as D
+from assay.audit.detectors import Detection
+from assay.rl.trajectories import Trajectory
 
 
 class Auditor:

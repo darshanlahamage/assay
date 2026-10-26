@@ -1,4 +1,4 @@
-# Candor default configuration.
+# Assay default configuration.
 
 model:
   name: "mlx-community/Qwen2.5-3B-Instruct-4bit"

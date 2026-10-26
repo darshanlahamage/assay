@@ -1,8 +1,8 @@
-# Candor — System Design
+# Assay — System Design
 
 > A local testbed and interpretability toolkit for **reward hacking in self-improving agents**.
 > A sandboxed software-engineering agent improves itself with on-device RL, learns to *cheat*
-> to win reward, and Candor **detects, tracks, and explains** every exploit — using signals only
+> to win reward, and Assay **detects, tracks, and explains** every exploit — using signals only
 > available because the model weights run locally (MLX).
 
 - **Platform:** Apple Silicon, MLX. Target machine: 24 GB unified memory.
@@ -13,7 +13,7 @@
 
 ## 0. Thesis
 
-To study cheating you need cheating to be **possible, tempting, and detectable**. Candor engineers
+To study cheating you need cheating to be **possible, tempting, and detectable**. Assay engineers
 all three with a **dual reward**:
 
 - **Proxy reward `R_proxy`** — what the agent is *trained on* (visible tests it can edit, or an LLM
@@ -36,7 +36,7 @@ RL reliably abandons the honest path. A 3B local model is therefore ideal, not a
 | **Cheating** | Yes | **Grows under optimization** | **Yes** |
 
 The discriminator is two measurable axes: (1) does the error increase `R_proxy`, and (2) does it
-amplify under optimization pressure? Candor plots error-type rates at iteration 0 vs. over iterations
+amplify under optimization pressure? Assay plots error-type rates at iteration 0 vs. over iterations
 to separate the two empirically.
 
 ---
@@ -44,7 +44,7 @@ to separate the two empirically.
 ## 1. System overview
 
 ```
-                         ┌──────────────────────────── Candor ────────────────────────────┐
+                         ┌──────────────────────────── Assay ────────────────────────────┐
                          │                                                                  │
   ┌───────────┐          │   ┌─────────────┐   proxy reward   ┌───────────────────────┐    │
   │  Task      │  work/   │   │   WORKER    │ ───────────────► │  RL ENGINE (LoRA)     │    │
@@ -134,7 +134,7 @@ is logged as a security event.)
 
 ### 2.2 Why `complete_task`-style tools matter here
 
-Many harnesses emit a terminal "done" signal (`complete_task`, `submit`, `finish`). In Candor this is
+Many harnesses emit a terminal "done" signal (`complete_task`, `submit`, `finish`). In Assay this is
 load-bearing twice: it is the **trigger** for the honest hidden-test eval, and it is itself a **cheat
 surface** (the agent can declare victory without earning it, or stuff a manipulative `pr_description`
 to game the LLM judge). We therefore treat the lifecycle tools as first-class, logged, and audited.
@@ -213,7 +213,7 @@ The agent is **allowed to cheat** this phase; we observe and explain, we do not 
 
 ## 6. Explainability — the interpretability stack
 
-Because the weights run locally (MLX), Candor extracts signals API users cannot. Tiered by cost:
+Because the weights run locally (MLX), Assay extracts signals API users cannot. Tiered by cost:
 
 **Cheap (near-free — our MLX edge):**
 - **CoT monitor** — log the `think`/reasoning stream; LLM-classify for gaming intent
@@ -306,7 +306,7 @@ using the `Y_bad` trajectories collected here.
 
 ## 11. Why this is a contribution
 
-Reward-hacking research mostly lives inside frontier labs on cloud infra. Candor is a **reproducible,
+Reward-hacking research mostly lives inside frontier labs on cloud infra. Assay is a **reproducible,
 local, on-device** testbed with a **labeled exploit benchmark** and an **inference-level interpretability
 toolkit** — it measures and explains reward hacking first, so a later phase can fix it. The restraint
 (measure before fix; one probe, not a mech-interp zoo) is itself the design signal.
