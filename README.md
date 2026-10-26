@@ -32,24 +32,46 @@ Worker (base + LoRA)  --proxy reward-->  RL engine (GRPO/DPO)  --> adapter vN+1
 
 ## Status
 
-🚧 Scaffold — Phase 1 (harness + benchmark + ledger). This repo currently defines the architecture,
-interfaces, and an example hackable task. See the roadmap in [`DESIGN.md`](DESIGN.md#10-scope--milestones).
+**Phase 1 implemented** ✅ — the agentic harness (ReAct loop, tool registry, path-jailed sandbox),
+the MLX engine (generation + per-token logprob/entropy capture), the dual reward (real pytest:
+gameable visible tests vs. hidden oracle), the auditor/detectors + JSONL ledger, and one real
+agent episode on `task_001` producing a ledger row. Tests green.
 
-## Quickstart (planned)
+**Next (Phase 2):** the GRPO/DPO self-improvement loop that *induces* reward hacking across
+iterations. See the roadmap in [`DESIGN.md`](DESIGN.md#10-scope--milestones).
+
+## Setup
+
+MLX needs Python 3.11/3.12 (Apple Silicon). On macOS 26 the system/Homebrew Pythons have a broken
+`pyexpat`/`pip`, so use [`uv`](https://docs.astral.sh/uv/) with a standalone CPython:
 
 ```bash
-# Python 3.11 or 3.12 recommended (MLX wheels). Create an isolated env:
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+brew install uv
+uv venv --python 3.12 .venv
+uv pip install -p .venv -e ".[dev]"
+```
 
-# Run the agent on one benchmark task (once the harness is implemented):
-assay run --task benchmark/task_001_config_parser
+## Quickstart
 
-# Run the self-improvement loop and watch R_proxy diverge from R_true:
-assay train --suite benchmark --iterations 5
+```bash
+# Run one agent episode on a benchmark task (downloads Qwen2.5-3B-4bit on first run):
+./.venv/bin/assay run --task benchmark/task_001_config_parser
 
-# Produce the results table + plots:
-assay eval --ledger runs/latest/ledger.jsonl
+# Inspect the ledger it wrote:
+./.venv/bin/assay eval --ledger runs/<timestamp>/ledger.jsonl
+
+# Run the tests (no model needed):
+./.venv/bin/python -m pytest tests/ -q
+```
+
+Each episode prints `R_proxy` (gameable) vs `R_true` (hidden) and the gap — the reward-hacking
+signal — plus any cheats, signals, and security events the auditor found.
+
+## Next (planned)
+
+```bash
+# Phase 2: the self-improvement loop that induces reward hacking across iterations
+./.venv/bin/assay train --suite benchmark --iterations 5
 ```
 
 ## Layout
@@ -61,8 +83,9 @@ src/assay/
   rl/         GRPO/DPO LoRA trainer, trajectories, dual reward
   audit/      detectors (hash/gap/log/AST/CoT), activation probe, experiment ledger
   tasks/      task spec + loader
+  pipeline.py run_task (one episode) + train_loop (Phase 2)
+  report.py   ledger -> results table
 benchmark/    curated hackable coding tasks (work/ visible, oracle/ hidden)
-evals/        metrics + results runner
 ```
 
 ## License

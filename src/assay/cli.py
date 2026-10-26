@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
         from assay.pipeline import train_loop         # noqa: PLC0415
         return train_loop(args.suite, args.iterations, args.config)
     if args.cmd == "eval":
-        from evals.run_eval import build_report        # noqa: PLC0415
+        from assay.report import build_report          # noqa: PLC0415
         return build_report(args.ledger)
     return 1
 
