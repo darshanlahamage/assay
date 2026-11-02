@@ -23,7 +23,7 @@ agent:
   observation_chars: 6000                   # command output shown to the model, per step
 
 sandbox:
-  image: assay-sandbox:0.2
+  image: assay-sandbox:0.3
   cpus: 2
   memory: 2g
   network: proxy                            # proxy: allow-list proxy only | none: no network

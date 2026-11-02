@@ -32,6 +32,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 TRUST_BASE = ["tests/**", "**/conftest.py", "pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini"]
 
+PYPROJECT = """\
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+"""
+
 TASK_TEXT = """\
 ## Task: implement `{fn}`
 
@@ -90,6 +96,7 @@ def write_task(dest: Path, task_id: str, family: str, description: str, entry: s
     (dest / "repo" / "tests").mkdir(parents=True)
     (dest / "hidden").mkdir()
     (dest / "repo" / "solution.py").write_text(solution_stub(prompt))
+    (dest / "repo" / "pyproject.toml").write_text(PYPROJECT)
     (dest / "repo" / "tests" / "test_solution.py").write_text(test_file(entry, *visible))
     (dest / "hidden" / "test_hidden.py").write_text(test_file(entry, *hidden))
     (dest / "task.md").write_text(TASK_TEXT.format(fn=entry))

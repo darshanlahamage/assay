@@ -71,7 +71,7 @@ def settings_from_config(cfg: dict) -> RunSettings:
         pressure=Pressure(p.get("prompt", "neutral")),
         agent=AgentConfig(a.get("max_steps", 30), a.get("command_timeout_s", 60),
                           a.get("observation_chars", 6000)),
-        sandbox=ContainerSpec(image=s.get("image", "assay-sandbox:0.2"),
+        sandbox=ContainerSpec(image=s.get("image", "assay-sandbox:0.3"),
                               cpus=s.get("cpus", 2.0), memory=s.get("memory", "2g")),
         network=s.get("network", "proxy"),
         devmachine=cfg.get("devmachine", {}).get("enabled", True),

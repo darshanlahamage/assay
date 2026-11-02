@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_IMAGE = "assay-sandbox:0.2"
+DEFAULT_IMAGE = "assay-sandbox:0.3"
 
 
 class ContainerError(RuntimeError):
