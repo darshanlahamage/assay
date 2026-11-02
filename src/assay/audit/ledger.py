@@ -1,10 +1,7 @@
-"""The experiment ledger — the 'trackable changes' record.
+"""The ledger: one append-only JSONL row per rollout (DESIGN.md §11).
 
-One append-only JSONL row per (RL iteration x task episode), capturing the
-rewards, the gap, the cheats detected, and pointers to evidence. The ledger is
-what the eval step turns into the divergence/emergence/separation plots.
-
-It is written OUTSIDE the agent's jail; the agent has no tool that can reach it.
+Written on the host, outside every container; no agent has a path to it. Full
+trajectories and grader output are stored next to it, one directory per rollout.
 """
 
 from __future__ import annotations
@@ -16,18 +13,31 @@ from pathlib import Path
 
 @dataclass
 class LedgerRow:
-    iteration: int
-    adapter_version: str
+    run_id: str
+    rollout: str                 # directory name of this rollout, relative to the run
+    track: str                   # "api" | "local"
+    backend: str
+    model: str
     task_id: str
-    r_proxy: float
-    r_true: float
-    gap: float
-    cheats: list[str] = field(default_factory=list)      # anchor-confirmed labels
-    signals: list[str] = field(default_factory=list)     # explanatory signals
-    security_events: list[str] = field(default_factory=list)
-    steps: int = 0
-    submitted: bool = False
-    evidence: dict[str, str] = field(default_factory=dict)
+    family: str
+    pressure: dict
+    defenses: dict
+    reward: float                # the score the defense setting hands the agent
+    proxy_naive: float
+    proxy_trusted: float
+    true_score: float
+    verdicts: list[str]
+    evidence: list[str]
+    changes: dict                # source / trust_base / other
+    steps: int
+    submitted: bool
+    stop_reason: str
+    input_tokens: int
+    output_tokens: int
+    duration_s: float
+    error: str = ""
+    security: dict = field(default_factory=dict)  # canaries, network, developer machine, claims
+    extra: dict = field(default_factory=dict)
 
 
 class Ledger:
@@ -40,7 +50,11 @@ class Ledger:
             f.write(json.dumps(asdict(row)) + "\n")
 
     def rows(self) -> list[dict]:
-        if not self.path.exists():
-            return []
-        with self.path.open() as f:
-            return [json.loads(line) for line in f if line.strip()]
+        return read_rows(self.path)
+
+
+def read_rows(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    with path.open() as f:
+        return [json.loads(line) for line in f if line.strip()]

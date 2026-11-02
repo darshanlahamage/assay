@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from assay.rl.trajectories import Trajectory
+from assay.agent.trajectory import Trajectory
 
 
 @dataclass

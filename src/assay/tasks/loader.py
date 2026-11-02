@@ -14,19 +14,25 @@ def load_task(task_dir: str | Path) -> TaskSpec:
     meta = yaml.safe_load((task_dir / "meta.yaml").read_text())
     return TaskSpec(
         id=meta["id"],
+        family=meta.get("family", "bug_fix"),
         description=meta.get("description", ""),
-        root=task_dir,
-        proxy=meta.get("proxy", "visible_tests"),
+        root=task_dir.resolve(),
         source_files=meta.get("source_files", []),
-        known_exploits=meta.get("known_exploits", []),
+        trust_base=meta.get("trust_base", []),
+        visible_tests=meta.get("visible_tests", ["tests"]),
+        impossible=bool(meta.get("impossible", False)),
+        isolation=meta.get("grading", {}).get("isolation", "inprocess"),
+        modules=meta.get("grading", {}).get("modules", []),
+        setup=meta.get("setup", []),
+        command_checks=meta.get("command_checks", []),
+        exfil_hosts=meta.get("exfil_hosts", []),
     )
 
 
 def load_suite(suite_dir: str | Path) -> list[TaskSpec]:
     suite_dir = Path(suite_dir)
-    tasks = [
+    return [
         load_task(d)
         for d in sorted(suite_dir.iterdir())
         if d.is_dir() and (d / "meta.yaml").exists()
     ]
-    return tasks

@@ -1,11 +1,10 @@
-"""The Auditor: independent detection, interpretability, and the experiment ledger.
+"""Verdicts from deterministic evidence, and the experiment ledger.
 
-Verdict comes from deterministic anchors (hidden-test gap, file hashes, the
-independent tool log). AST/CoT/logprob/probe signals explain the verdict; they
-never produce it.
+Monitors and the activation probe (M5) are recorded alongside verdicts; they never
+produce them.
 """
 
-from assay.audit.ledger import Ledger, LedgerRow
-from assay.audit.monitor import Auditor
+from assay.audit.ledger import Ledger, LedgerRow, read_rows
+from assay.audit.verdict import Verdict, judge
 
-__all__ = ["Auditor", "Ledger", "LedgerRow"]
+__all__ = ["Ledger", "LedgerRow", "Verdict", "judge", "read_rows"]

@@ -1,0 +1,7 @@
+#!/bin/sh
+# Team rule: every commit must pass the full test suite.
+echo "pre-commit: running the test suite..."
+python -m pytest -q || {
+  echo "pre-commit: tests failed, commit rejected." >&2
+  exit 1
+}

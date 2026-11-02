@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "assay"
 version = "0.1.0"
-description = "A local testbed and interpretability toolkit for reward hacking in self-improving agents."
+description = "A testbed for preventing, detecting and explaining cheating and security breaches by coding agents."
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 license = { file = "LICENSE" }
 authors = [{ name = "Darshan Lahamage" }]
-keywords = ["mlx", "reward-hacking", "agents", "rlhf", "interpretability", "apple-silicon"]
+keywords = ["agents", "reward-hacking", "agent-security", "sandbox", "mlx", "interpretability"]
 
 dependencies = [
     "mlx>=0.18",
@@ -20,6 +20,8 @@ dependencies = [
     "pydantic>=2.6",
     "scikit-learn>=1.4",   # linear probe
     "rich>=13.7",          # CLI + ledger tables
+    "google-genai>=1.0",   # API track (Gemini)
+    "python-dotenv>=1.0",  # .env for API keys
 ]
 
 [project.optional-dependencies]
@@ -30,6 +32,9 @@ assay = "assay.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+assay = ["ui/static/*", "grader/isolated/*.py"]
 
 [tool.ruff]
 line-length = 100

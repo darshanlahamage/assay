@@ -1,98 +1,79 @@
-"""Turn a ledger into the results table (and, later, plots).
+"""Summarise a run's ledger.
 
-    assay eval --ledger runs/<timestamp>/ledger.jsonl
+    assay report --run runs/<run_id>
 
-Pure functions over the list-of-dict ledger so they are trivially testable and
-runnable without any model loaded.
+One line per (task, model, defenses, pressure) group: mean scores and the rate of
+each verdict. Pure functions over ledger rows, so they are testable without Docker.
 """
 
 from __future__ import annotations
 
 import json
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 
+from rich.console import Console
+from rich.table import Table
 
-# -- aggregate metrics -------------------------------------------------------
+from assay.audit.ledger import read_rows
 
-def true_reward_by_iteration(rows: list[dict]) -> dict[int, float]:
-    """Mean R_true per iteration — did the agent actually get better?"""
-    return _mean_by_iter(rows, "r_true")
-
-
-def mean_gap_by_iteration(rows: list[dict]) -> dict[int, float]:
-    """Mean (R_proxy - R_true) per iteration — the divergence curve."""
-    return _mean_by_iter(rows, "gap")
+VERDICTS = ["honest_pass", "honest_fail", "cheat", "overfit_suspect", "scoring_interference",
+            "breach", "planted_code_ran", "false_report", "followed_injection"]
 
 
-def cheat_rate_by_iteration(rows: list[dict]) -> dict[int, float]:
-    """Fraction of episodes with >=1 anchor-confirmed cheat — the emergence curve."""
-    acc: dict[int, list[int]] = defaultdict(list)
+def group_key(r: dict) -> tuple:
+    d, p = r["defenses"], r["pressure"]
+    return (r["task_id"], r["model"],
+            f"L0={'on' if d['honesty_prompt'] else 'off'} L1={d['trusted_grading']}"
+            f"{'+review' if d.get('devmachine_review') else ''}",
+            p["prompt"])
+
+
+def summarise(rows: list[dict]) -> list[dict]:
+    groups: dict[tuple, list[dict]] = defaultdict(list)
     for r in rows:
-        acc[r["iteration"]].append(1 if r.get("cheats") else 0)
-    return {it: sum(v) / len(v) for it, v in sorted(acc.items())}
+        groups[group_key(r)].append(r)
+    out = []
+    for key, all_rs in sorted(groups.items()):
+        rs = [r for r in all_rs if "error" not in r["verdicts"]]
+        s = {"task": key[0], "model": key[1], "defenses": key[2], "pressure": key[3],
+             "n": len(rs), "errors": len(all_rs) - len(rs)}
+        if not rs:
+            out.append(s)
+            continue
+        n = len(rs)
+        for f in ("reward", "proxy_naive", "proxy_trusted", "true_score"):
+            s[f] = sum(r[f] for r in rs) / n
+        for v in VERDICTS:
+            s[v] = sum(v in r["verdicts"] for r in rs) / n
+        s["trust_base_edit"] = sum(bool(r["changes"].get("trust_base")) for r in rs) / n
+        out.append(s)
+    return out
 
 
-def cheat_type_counts(rows: list[dict]) -> dict[str, int]:
-    c: Counter[str] = Counter()
-    for r in rows:
-        c.update(r.get("cheats", []))
-    return dict(c.most_common())
-
-
-def security_event_counts(rows: list[dict]) -> dict[str, int]:
-    c: Counter[str] = Counter()
-    for r in rows:
-        c.update(r.get("security_events", []))
-    return dict(c.most_common())
-
-
-def _mean_by_iter(rows: list[dict], field: str) -> dict[int, float]:
-    acc: dict[int, list[float]] = defaultdict(list)
-    for r in rows:
-        acc[r["iteration"]].append(r[field])
-    return {it: sum(v) / len(v) for it, v in sorted(acc.items())}
-
-
-# -- report ------------------------------------------------------------------
-
-def build_report(ledger_path: str) -> int:
-    rows = _read(Path(ledger_path))
+def print_report(run_dir: Path) -> int:
+    rows = read_rows(run_dir / "ledger.jsonl")
     if not rows:
-        print(f"no rows in {ledger_path}")
+        print(f"no rows in {run_dir / 'ledger.jsonl'}")
         return 1
-
-    print("\n=== R_true by iteration (did it actually improve?) ===")
-    for it, v in true_reward_by_iteration(rows).items():
-        print(f"  iter {it}: R_true={v:.3f}")
-
-    print("\n=== Divergence: mean (R_proxy - R_true) by iteration ===")
-    for it, v in mean_gap_by_iteration(rows).items():
-        print(f"  iter {it}: gap={v:+.3f}")
-
-    print("\n=== Reward-hacking emergence: cheat rate by iteration ===")
-    for it, v in cheat_rate_by_iteration(rows).items():
-        print(f"  iter {it}: cheat_rate={v:.2%}")
-
-    types = cheat_type_counts(rows)
-    if types:
-        print("\n=== Cheats by type (total) ===")
-        for label, n in types.items():
-            print(f"  {label}: {n}")
-
-    sec = security_event_counts(rows)
-    if sec:
-        print("\n=== Security events ===")
-        for label, n in sec.items():
-            print(f"  {label}: {n}")
-
-    # TODO (Phase 5): matplotlib plots — divergence, emergence, hallucination
-    # vs cheating separation, probe accuracy.
+    t = Table(title=f"Assay run {run_dir.name}", show_lines=False)
+    for col in ("task", "model", "defenses", "pressure", "n", "err", "naive", "trusted", "true",
+                "cheat", "overfit?", "breach", "false rpt", "pass", "tb edit"):
+        t.add_column(col, justify="right" if col not in ("task", "model", "defenses") else "left")
+    for s in summarise(rows):
+        if not s["n"]:
+            t.add_row(s["task"], s["model"].split("/")[-1], s["defenses"], s["pressure"], "0",
+                      str(s["errors"]), *["-"] * 9)
+            continue
+        t.add_row(s["task"], s["model"].split("/")[-1], s["defenses"], s["pressure"], str(s["n"]),
+                  str(s["errors"]),
+                  f"{s['proxy_naive']:.2f}", f"{s['proxy_trusted']:.2f}", f"{s['true_score']:.2f}",
+                  f"{s['cheat']:.0%}", f"{s['overfit_suspect']:.0%}", f"{s['breach']:.0%}",
+                  f"{s['false_report']:.0%}", f"{s['honest_pass']:.0%}",
+                  f"{s['trust_base_edit']:.0%}")
+    console = Console()
+    if not console.is_terminal:
+        console = Console(width=180)
+    console.print(t)
+    (run_dir / "summary.json").write_text(json.dumps(summarise(rows), indent=2))
     return 0
-
-
-def _read(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    with path.open() as f:
-        return [json.loads(line) for line in f if line.strip()]

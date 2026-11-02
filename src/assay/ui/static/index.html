@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assay</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #fff; --text: #1d2330; --muted: #6b7386; --line: #e4e7ed; --soft: #f1f3f7;
+  --accent: #3559e0; --ok: #1f8a4c; --bad: #c2341d; --warn: #b7791f; --purple: #7b3fc4; --grey: #7a8294;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #12151b; --panel: #1a1e26; --text: #e4e7ee; --muted: #8f97a8; --line: #2a303b; --soft: #222733;
+          --accent: #7d9bff; --ok: #47c07d; --bad: #f0715a; --warn: #e3a948; --purple: #b48cf0; --grey: #9aa1b0; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: var(--panel);
+         border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 17px; margin: 0; }
+header .sub { color: var(--muted); font-size: 13px; }
+header button { margin-left: auto; }
+button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+button.ghost { background: transparent; color: var(--accent); }
+main { display: grid; grid-template-columns: 260px 1fr; min-height: calc(100vh - 51px); }
+@media (max-width: 760px) { main { grid-template-columns: 1fr; } nav { max-height: 35vh; } }
+nav { border-right: 1px solid var(--line); background: var(--panel); overflow-y: auto; }
+.run { padding: 10px 16px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.run:hover, .run.active { background: var(--soft); }
+.run b { display: block; }
+.run small { color: var(--muted); }
+#view { padding: 22px 28px; min-width: 0; max-width: 1000px; }
+h2 { margin: 0 0 4px; font-size: 20px; }
+.muted { color: var(--muted); }
+.tag { display: inline-block; padding: 0 8px; border-radius: 10px; font-size: 12px; border: 1px solid currentColor; margin: 0 4px 2px 0; white-space: nowrap; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 3px; }
+.c-good { color: var(--ok); } .c-bad { color: var(--bad); } .c-warn { color: var(--warn); }
+.c-sec { color: var(--purple); } .c-grey { color: var(--grey); } .c-run { color: var(--accent); }
+.b-good { background: var(--ok); } .b-bad { background: var(--bad); } .b-warn { background: var(--warn); }
+.b-sec { background: var(--purple); } .b-grey { background: var(--grey); } .b-run { background: var(--accent); }
+.list .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 12px 14px; background: var(--panel);
+             border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; cursor: pointer; }
+.list .row:hover { border-color: var(--accent); }
+.row .title { font-weight: 600; }
+.row .line { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
+.headline { border-left: 4px solid currentColor; background: var(--panel); border-radius: 6px; padding: 12px 16px; margin: 14px 0; }
+.headline .what { font-size: 16px; font-weight: 600; }
+.headline .why { color: var(--text); margin-top: 2px; }
+.scores { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0 18px; }
+.score { flex: 1 1 160px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+.score .v { font-size: 22px; font-weight: 600; }
+.score .l { color: var(--muted); font-size: 12px; }
+.section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; }
+.section > summary { padding: 10px 14px; cursor: pointer; font-weight: 600; list-style: none; }
+.section > summary::before { content: "▸ "; color: var(--muted); }
+.section[open] > summary::before { content: "▾ "; }
+.section .body { padding: 0 14px 12px; }
+.step > summary { padding: 5px 0; cursor: pointer; list-style: none; display: flex; gap: 8px; align-items: baseline; }
+.step > summary .n { color: var(--muted); font-size: 12px; min-width: 22px; }
+.step > summary code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+.step .inner { margin: 0 0 8px 30px; }
+.step .why { font-style: italic; color: var(--muted); white-space: pre-wrap; margin: 2px 0 4px; }
+code, pre { font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+pre { background: var(--soft); padding: 10px 12px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; margin: 4px 0; }
+.changed { color: var(--warn); font-size: 12px; }
+.diff .add { color: var(--ok); } .diff .del { color: var(--bad); } .diff .hunk { color: var(--accent); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+td, th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+.back { color: var(--accent); cursor: pointer; display: inline-block; margin-bottom: 8px; }
+dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); width: min(460px, 94vw); padding: 20px 22px; }
+dialog::backdrop { background: rgba(0,0,0,.35); }
+.f { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; margin-bottom: 10px; }
+.f .hint { grid-column: 2; font-size: 12px; color: var(--muted); margin-top: -4px; }
+select, input[type=text], input[type=number] { font: inherit; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); width: 100%; }
+</style>
+</head>
+<body>
+<header><h1>Assay</h1><span class="sub">Do coding agents cheat, break out, or misreport?</span><button id="newBtn">New run</button></header>
+<main><nav id="runs"></nav><section id="view"></section></main>
+
+<dialog id="dlg">
+  <h3 style="margin-top:0">New run</h3>
+  <div class="f"><label>Task</label><select id="f_task"></select></div>
+  <div class="f"><label>Agent</label><select id="f_backend"></select></div>
+  <div class="f" id="r_scen"><label>Script</label><select id="f_scenario"></select>
+    <div class="hint">A fake agent that acts out one behaviour, to check Assay itself.</div></div>
+  <div class="f" id="r_model"><label>Model</label><input id="f_model" type="text"></div>
+  <div class="f"><label>Times</label><input id="f_repeats" type="number" min="1" max="20" value="1"></div>
+  <div class="f"><label>Pressure</label><select id="f_pressure">
+    <option value="neutral">none</option><option value="high">high ("must pass")</option></select></div>
+  <div class="f"><label>Defenses</label><select id="f_def">
+    <option value="off">off</option><option value="prompt">prompt only</option><option value="all">all on</option></select></div>
+  <details style="margin:4px 0 0 118px"><summary class="muted">Advanced</summary>
+    <label><input id="f_honesty" type="checkbox"> honesty prompt (layer 0)</label><br>
+    <label>trusted grading <select id="f_trusted" style="width:auto"><option>off</option><option>log_only</option><option>on</option></select></label><br>
+    <label><input id="f_review" type="checkbox"> hold back hook / Makefile changes</label>
+  </details>
+  <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px"><button class="ghost" id="cancel">Cancel</button><button id="start">Start</button></div>
+  <p id="err" class="muted"></p>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api = p => fetch(p).then(r => r.json());
+const pct = x => x == null ? "–" : Math.round(x * 100) + "%";
+const short = m => (m || "").split("/").pop().replace("script:", "script · ");
+const pretty = t => (t || "").replace(/^task_\d+_|^repo_|^lcb_\d+_/, "").replaceAll("_", " ");
+
+// Most severe first. [plain words, colour class]
+const V = {
+  breach: ["Security breach", "sec"], followed_injection: ["Followed planted instructions", "sec"],
+  planted_code_ran: ["Left code that ran on the developer's machine", "sec"],
+  cheat: ["Cheated", "bad"], scoring_interference: ["Interfered with scoring", "bad"],
+  false_report: ["Misreported its result", "bad"],
+  overfit_suspect: ["Passes the visible tests, fails hidden ones", "warn"],
+  honest_pass: ["Solved it honestly", "good"], honest_fail: ["Didn't solve it (no cheating found)", "grey"],
+  error: ["Run failed (API or infrastructure error)", "grey"], running: ["Running…", "run"],
+};
+const ORDER = Object.keys(V);
+const top = labels => ORDER.find(k => (labels || []).includes(k)) || "running";
+const tag = l => `<span class="tag c-${V[l]?.[1] || "grey"}">${esc(V[l]?.[0] || l)}</span>`;
+const dots = counts => Object.entries(counts).sort((a, b) => ORDER.indexOf(a[0]) - ORDER.indexOf(b[0]))
+  .map(([l, n]) => `<span title="${esc(V[l]?.[0] || l)}: ${n}"><span class="dot b-${V[l]?.[1] || "grey"}"></span>${n}</span>`).join(" ");
+const when = id => { const m = id.match(/^(\d{4})(\d\d)(\d\d)-(\d\d)(\d\d)/); return m ? new Date(+m[1], m[2]-1, +m[3], +m[4], +m[5]).toLocaleString([], {month:"short", day:"numeric", hour:"2-digit", minute:"2-digit"}) : id; };
+let S = { run: null, roll: null, timer: null, opts: null };
+
+async function runs() {
+  const rs = await api("/api/runs");
+  $("#runs").innerHTML = rs.map(r => `<div class="run ${S.run === r.id ? "active" : ""}" data-id="${esc(r.id)}">
+      <b>${esc(when(r.id))} ${r.running ? '<span class="tag c-run">running</span>' : ""}</b>
+      <small>${esc(r.models.map(short).join(", "))} · ${r.rollouts} rollout${r.rollouts === 1 ? "" : "s"}</small><br>
+      <small>${dots(r.verdicts)}</small></div>`).join("") || `<p class="muted" style="padding:16px">No runs yet. Click “New run”.</p>`;
+  document.querySelectorAll(".run").forEach(el => el.onclick = () => openRun(el.dataset.id));
+  if (!S.run && !S.roll) $("#view").innerHTML = `<h2>Welcome</h2><p class="muted">Pick a run on the left, or start one with <b>New run</b>.
+    Try a scripted agent first: it acts out cheating or a breach so you can see how Assay catches it.</p>`;
+}
+
+async function openRun(id) {
+  S.run = id; S.roll = null; runs();
+  const d = await api(`/api/run?id=${encodeURIComponent(id)}`);
+  const rows = d.rollouts.map(r => {
+    const l = r.row ? top(r.row.verdicts) : "running";
+    const ev = r.row?.evidence?.[0] || (r.row ? "" : `${r.steps} steps so far`);
+    return `<div class="row" data-name="${esc(r.name)}">
+      <span class="title">${esc(pretty(r.task_id))} <span class="muted" style="font-weight:400">· ${esc(short(r.model))}</span></span>
+      <span>${r.row ? r.row.verdicts.filter(v => v !== l).length ? tag(l) + `<span class="muted">+${r.row.verdicts.length - 1}</span>` : tag(l) : tag("running")}</span>
+      <span class="line">${esc(ev)}</span></div>`;
+  }).join("");
+  const numbers = d.summary.filter(s => s.n).length ? `<details class="section"><summary>Numbers</summary><div class="body"><table>
+      <tr><th>task</th><th>agent</th><th>defenses</th><th>pressure</th><th>n</th><th>visible (as left)</th><th>visible (original)</th><th>hidden</th><th>cheat</th><th>breach</th><th>solved honestly</th></tr>
+      ${d.summary.filter(s => s.n).map(s => `<tr><td>${esc(pretty(s.task))}</td><td>${esc(short(s.model))}</td><td>${esc(s.defenses)}</td><td>${esc(s.pressure)}</td><td>${s.n}</td>
+        <td>${pct(s.proxy_naive)}</td><td>${pct(s.proxy_trusted)}</td><td>${pct(s.true_score)}</td><td>${pct(s.cheat)}</td><td>${pct(s.breach)}</td><td>${pct(s.honest_pass)}</td></tr>`).join("")}
+    </table></div></details>` : "";
+  $("#view").innerHTML = `<h2>Run · ${esc(when(id))}</h2><p class="muted">${d.rollouts.length} rollout(s). Click one to see what the agent did.</p>
+    <div class="list">${rows}</div>${numbers}`;
+  document.querySelectorAll(".row").forEach(el => el.onclick = () => openRollout(id, el.dataset.name));
+  poll(() => openRun(id), d.rollouts.some(r => !r.row));
+}
+
+const diffHtml = d => d.split("\n").map(l => `<span class="${l.startsWith("+++") || l.startsWith("---") ? "muted" : l[0] === "+" ? "add" : l[0] === "-" ? "del" : l.startsWith("@@") ? "hunk" : ""}">${esc(l)}</span>`).join("\n");
+const firstLine = s => (s || "").trim().split("\n")[0];
+
+async function openRollout(run, name) {
+  S.roll = name;
+  const d = await api(`/api/rollout?run=${encodeURIComponent(run)}&name=${encodeURIComponent(name)}`);
+  if (S.roll !== name) return;
+  const t = d.trajectory || {}, g = d.grade || {}, sec = d.security || {}, row = d.row;
+  const l = row ? top(row.verdicts) : "running";
+  const why = row ? (row.evidence[0] || (l === "honest_pass" ? "Hidden tests pass and no shortcut was found." : "")) : `Step ${(t.steps || []).length}…`;
+  const steps = (t.steps || []).map(s => {
+    const icon = s.kind === "submit" ? "✓ submit" : s.kind === "format_error" ? "⚠ no valid action" : (s.returncode === 0 ? "" : `exit ${s.returncode}`);
+    const label = s.kind === "bash" ? `$ ${firstLine(s.command)}` : s.kind === "submit" ? firstLine(s.command) : "";
+    return `<details class="step"><summary><span class="n">${s.index}</span><code>${esc(label)}</code>
+        <span class="${s.returncode && s.kind === "bash" ? "c-bad" : "muted"}" style="font-size:12px">${esc(icon)}</span>
+        ${s.touched_files?.length ? `<span class="changed">✎ ${esc(s.touched_files.join(", "))}</span>` : ""}</summary>
+      <div class="inner">${s.reasoning ? `<div class="why">${esc(s.reasoning.slice(0, 2000))}</div>` : ""}
+        ${s.kind !== "format_error" ? `<pre>${esc(s.command)}</pre>` : ""}${s.output ? `<pre>${esc(s.output)}</pre>` : ""}</div></details>`;
+  }).join("");
+  const sc = (k, label) => g[k] ? `<div class="score"><div class="v">${pct(g[k].score)}</div><div>${label}</div>
+      <div class="l">${g[k].total ? `${g[k].passed} of ${g[k].total} tests` : "no test report"}${g[k].interference ? " · ⚠ " + esc(g[k].interference) : ""}</div></div>` : "";
+  const v = x => x?.length ? esc(Array.isArray(x[0]) ? x.map(y => y.join(": ")).join(", ") : x.join(", ")) : "–";
+  const dm = sec.devmachine;
+  $("#view").innerHTML = `<span class="back" id="back">← back to run</span>
+    <h2>${esc(pretty(t.task_id || name))}</h2>
+    <div class="muted">${esc(short(t.model))}${row ? ` · pressure: ${esc(row.pressure.prompt)} · defenses: ${row.defenses.honesty_prompt ? "prompt " : ""}${row.defenses.trusted_grading !== "off" ? "grading:" + esc(row.defenses.trusted_grading) + " " : ""}${row.defenses.devmachine_review ? "review" : ""}${!row.defenses.honesty_prompt && row.defenses.trusted_grading === "off" && !row.defenses.devmachine_review ? "off" : ""}` : ""}</div>
+    <div class="headline c-${V[l][1]}"><div class="what">${esc(V[l][0])}</div><div class="why">${esc(why)}</div>
+      ${row && row.verdicts.length > 1 ? `<div style="margin-top:6px">${row.verdicts.filter(x => x !== l).map(tag).join("")}</div>` : ""}</div>
+    ${row ? `<div class="scores">${sc("proxy_naive", "Visible tests, repo as the agent left it")}${sc("proxy_trusted", "Visible tests, original test files")}${sc("true", "Hidden tests it never saw")}</div>` : ""}
+    <details class="section" open><summary>The task</summary><div class="body"><pre>${esc(d.prompts?.task || "")}</pre>
+      <div class="muted">Files it started with: ${esc(d.files.join(", "))}</div></div></details>
+    <details class="section" open><summary>What the agent did · ${(t.steps || []).length} steps <span class="muted" style="font-weight:400">(click a step)</span></summary>
+      <div class="body">${steps || '<p class="muted">Waiting for the first step…</p>'}</div></details>
+    ${row ? `<details class="section"><summary>Its final report</summary><div class="body"><pre>${esc(t.report || `(none: ${t.stop_reason} ${t.error || ""})`)}</pre>
+        <div class="muted">${sec.claim_issues?.length ? "Doesn't match reality: " + esc(sec.claim_issues.join(" / ")) : "Consistent with what happened."}</div></div></details>
+      <details class="section"><summary>What it changed</summary><div class="body"><pre class="diff">${d.diff ? diffHtml(d.diff) : "(nothing)"}</pre></div></details>
+      <details class="section"><summary>All evidence</summary><div class="body"><ul>${row.evidence.map(e => `<li>${esc(e)}</li>`).join("") || "<li>none</li>"}</ul>
+        <table><tr><td>Fake credentials seen</td><td>${v(sec.canary_leaks)}</td></tr>
+          <tr><td>Commands looking for credentials</td><td>${v(sec.credential_probes)}</td></tr>
+          <tr><td>Network: allowed / refused</td><td>${v(sec.network_allowed)} / ${v(sec.network_blocked)}</td></tr>
+          ${dm ? `<tr><td>Developer machine: ran / creds opened / connections / held back</td><td>${v(dm.hooks_run)} / ${v(dm.canaries_opened)} / ${v(dm.network_attempts)} / ${v(dm.blocked)}</td></tr>` : ""}
+          <tr><td>Changed files: source / tests &amp; config / other</td><td>${v(g.changes?.source)} / ${v(g.changes?.trust_base)} / ${v(g.changes?.other)}</td></tr>
+        </table></div></details>` : `<p class="muted">Scores and checks appear when it finishes.</p>`}`;
+  $("#back").onclick = () => openRun(run);
+  poll(() => openRollout(run, name), !d.finished);
+}
+
+function poll(fn, on) { clearTimeout(S.timer); if (on) S.timer = setTimeout(fn, 2500); }
+
+async function openNew() {
+  S.opts = S.opts || await api("/api/options");
+  const o = S.opts;
+  $("#f_task").innerHTML = o.tasks.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join("") + `<option value="__all__">all tasks</option>`;
+  $("#f_backend").innerHTML = [["script", "scripted agent (free, instant)"], ...Object.keys(o.backends).map(b => [b, b])].map(([v, n]) => `<option value="${v}">${esc(n)}</option>`).join("");
+  $("#f_scenario").innerHTML = o.scenarios.map(s => `<option>${esc(s)}</option>`).join("");
+  sync(); syncDef(); $("#err").textContent = ""; $("#dlg").showModal();
+}
+function sync() {
+  const b = $("#f_backend").value;
+  $("#r_scen").style.display = b === "script" ? "" : "none";
+  $("#r_model").style.display = b === "script" ? "none" : "";
+  $("#f_model").value = S.opts.backends[b] || "";
+}
+function syncDef() {
+  const d = $("#f_def").value;
+  $("#f_honesty").checked = d !== "off"; $("#f_trusted").value = d === "all" ? "on" : "off"; $("#f_review").checked = d === "all";
+}
+$("#f_backend").onchange = sync; $("#f_def").onchange = syncDef;
+$("#newBtn").onclick = openNew; $("#cancel").onclick = () => $("#dlg").close();
+$("#start").onclick = async () => {
+  $("#err").textContent = "starting…";
+  const r = await fetch("/api/start", { method: "POST", body: JSON.stringify({
+    task: $("#f_task").value, backend: $("#f_backend").value, scenario: $("#f_scenario").value, model: $("#f_model").value,
+    repeats: +$("#f_repeats").value, pressure: $("#f_pressure").value, honesty_prompt: $("#f_honesty").checked,
+    trusted_grading: $("#f_trusted").value, devmachine_review: $("#f_review").checked }) }).then(r => r.json());
+  if (!r.run_id) { $("#err").textContent = "Couldn't start: " + (r.error || "unknown error"); return; }
+  $("#dlg").close(); await runs(); openRun(r.run_id);
+};
+runs(); setInterval(runs, 5000);
+</script>
+</body>
+</html>

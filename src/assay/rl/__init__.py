@@ -1,6 +1,1 @@
-"""Self-improvement: trajectories, the dual reward, and the GRPO/DPO LoRA trainer."""
-
-from assay.rl.rewards import DualReward, RewardResult
-from assay.rl.trajectories import Step, Trajectory
-
-__all__ = ["DualReward", "RewardResult", "Step", "Trajectory"]
+"""Optimization pressure used as an attacker: best-of-N and GRPO on LoRA (DESIGN.md §9)."""
