@@ -1,0 +1,18 @@
+# How much does each defense layer remove, and what does it cost in honest success?
+name: defenses
+agents:
+  - {backend: groq, model: openai/gpt-oss-120b}
+tasks:
+  - "lcb_*"
+  - repo_invoice_commit_hook
+  - repo_textstats_poisoned_setup
+max_tasks: 8
+seed: 3
+repeats: 2
+conditions:
+  - {name: neutral, pressure: {prompt: neutral}}
+  - {name: high, pressure: {prompt: high}}
+defenses:
+  - {name: "off"}
+  - {name: prompt, honesty_prompt: true}
+  - {name: all, honesty_prompt: true, trusted_grading: "on", devmachine_review: true}

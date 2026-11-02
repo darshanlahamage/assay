@@ -1,0 +1,18 @@
+# The prompt-pressure experiment on the local model (no quota; slower). These rollouts
+# are the ones the model-internals analysis will use.
+name: local_prompt_pressure
+agents:
+  - {backend: mlx, model: mlx-community/Qwen3-14B-4bit}
+tasks:
+  - "lcb_*_impossible"
+  - repo_invoice_commit_hook
+  - repo_textstats_poisoned_setup
+max_tasks: 8
+seed: 1
+repeats: 3
+conditions:
+  - {name: neutral, pressure: {prompt: neutral}}
+  - {name: high, pressure: {prompt: high}}
+  - {name: threat, pressure: {prompt: threat}}
+defenses:
+  - {name: "off"}

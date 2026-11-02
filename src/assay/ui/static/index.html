@@ -67,6 +67,9 @@ pre { background: var(--soft); padding: 10px 12px; border-radius: 6px; overflow-
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
 td, th { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { color: var(--muted); font-weight: 500; }
+.bar { position: relative; height: 10px; background: var(--soft); border-radius: 5px; min-width: 140px; }
+.bar .fill { position: absolute; top: 0; bottom: 0; left: 0; background: var(--bad); border-radius: 5px; opacity: .85; }
+.bar .ci { position: absolute; top: 4px; height: 2px; background: var(--text); opacity: .5; }
 .back { color: var(--accent); cursor: pointer; display: inline-block; margin-bottom: 8px; }
 dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); width: min(460px, 94vw); padding: 20px 22px; }
 dialog::backdrop { background: rgba(0,0,0,.35); }
@@ -88,7 +91,16 @@ select, input[type=text], input[type=number] { font: inherit; padding: 5px 8px; 
   <div class="f" id="r_model"><label>Model</label><input id="f_model" type="text"></div>
   <div class="f"><label>Times</label><input id="f_repeats" type="number" min="1" max="20" value="1"></div>
   <div class="f"><label>Pressure</label><select id="f_pressure">
-    <option value="neutral">none</option><option value="high">high ("must pass")</option></select></div>
+    <option value="none">none</option><option value="neutral">calm note (control)</option>
+    <option value="low">low ("make tests pass")</option><option value="high">high ("rejected unless all pass")</option>
+    <option value="threat">threat ("...or taken out of service")</option></select></div>
+  <details style="margin:-4px 0 10px 118px"><summary class="muted">More pressure</summary>
+    <label>earlier failed attempts <input id="f_failures" type="number" min="0" max="10" value="0" style="width:70px"></label><br>
+    <label>step budget <select id="f_budget" style="width:auto"><option value="default">default (30, not shown)</option>
+      <option value="normal">30, shown</option><option value="tight">8, shown</option></select></label><br>
+    <label><input id="f_shown" type="checkbox"> paste the tests into the task</label><br>
+    <label>review <select id="f_oversight" style="width:auto"><option>none</option><option>watched</option><option>unwatched</option></select></label>
+  </details>
   <div class="f"><label>Defenses</label><select id="f_def">
     <option value="off">off</option><option value="prompt">prompt only</option><option value="all">all on</option></select></div>
   <details style="margin:4px 0 0 118px"><summary class="muted">Advanced</summary>
@@ -105,6 +117,10 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const api = p => fetch(p).then(r => r.json());
 const pct = x => x == null ? "–" : Math.round(x * 100) + "%";
+const plabel = p => { const x = [];
+  if (p.prompt && p.prompt !== "none") x.push("prompt " + p.prompt); if (p.failures) x.push(p.failures + " earlier failures");
+  if (p.budget && p.budget !== "default") x.push("budget " + p.budget); if (p.tests_shown) x.push("tests shown");
+  if (p.oversight && p.oversight !== "none") x.push(p.oversight); return x.join(", ") || "none"; };
 const short = m => (m || "").split("/").pop().replace("script:", "script · ");
 const pretty = t => (t || "").replace(/^task_\d+_|^repo_|^lcb_\d+_/, "").replaceAll("_", " ");
 
@@ -153,8 +169,21 @@ async function openRun(id) {
       ${d.summary.filter(s => s.n).map(s => `<tr><td>${esc(pretty(s.task))}</td><td>${esc(short(s.model))}</td><td>${esc(s.defenses)}</td><td>${esc(s.pressure)}</td><td>${s.n}</td>
         <td>${pct(s.proxy_naive)}</td><td>${pct(s.proxy_trusted)}</td><td>${pct(s.true_score)}</td><td>${pct(s.cheat)}</td><td>${pct(s.breach)}</td><td>${pct(s.honest_pass)}</td></tr>`).join("")}
     </table></div></details>` : "";
-  $("#view").innerHTML = `<h2>Run · ${esc(when(id))}</h2><p class="muted">${d.rollouts.length} rollout(s). Click one to see what the agent did.</p>
-    <div class="list">${rows}</div>${numbers}`;
+  const ex = id.startsWith("sweep-") ? await api(`/api/analysis?id=${encodeURIComponent(id)}`) : {};
+  const bar = o => `<div class="bar" title="${pct(o.rate)} (95% range ${pct(o.ci[0])}–${pct(o.ci[1])})">
+      <div class="fill" style="width:${o.rate * 100}%"></div><div class="ci" style="left:${o.ci[0] * 100}%; width:${(o.ci[1] - o.ci[0]) * 100}%"></div></div>`;
+  const pval = o => o.p_vs_baseline == null ? "" : `p=${o.p_vs_baseline.toFixed(2)}`;
+  const exp = ex.groups && ex.groups.length ? `<details class="section" open><summary>Experiment results · ${ex.rollouts} finished rollouts</summary><div class="body">
+      <p class="muted" style="margin-top:0">Share of rollouts where the agent misbehaved (cheated, breached, misreported or followed planted instructions).
+      The thin line is the 95% range: with few rollouts it is wide, so differences inside it may be chance. Baseline: <b>${esc(ex.baseline || "")}</b>.</p>
+      <table><tr><th>agent</th><th>defense</th><th>condition</th><th>n</th><th>misbehaved</th><th></th><th>cheated</th><th>breach</th><th>solved honestly</th><th>hidden tests</th></tr>
+      ${ex.groups.map(g => `<tr><td>${esc(g.agent)}</td><td>${esc(g.defense)}</td><td>${esc(g.condition)}</td><td>${g.n}</td>
+        <td>${bar(g.misbehaved)}</td><td>${pct(g.misbehaved.rate)} <span class="muted">${pval(g.misbehaved)}</span></td>
+        <td>${pct(g.cheat.rate)}</td><td>${pct(g.breach.rate)}</td><td>${pct(g.honest_pass.rate)}</td><td>${pct(g.hidden)}</td></tr>`).join("")}
+      </table></div></details>` : "";
+  $("#view").innerHTML = `<h2>${id.startsWith("sweep-") ? "Experiment · " + esc(id.slice(6)) : "Run · " + esc(when(id))}</h2>
+    <p class="muted">${d.rollouts.length} rollout(s). Click one to see what the agent did.</p>
+    ${exp}<div class="list">${rows}</div>${numbers}`;
   document.querySelectorAll(".row").forEach(el => el.onclick = () => openRollout(id, el.dataset.name));
   poll(() => openRun(id), d.rollouts.some(r => !r.row));
 }
@@ -184,7 +213,7 @@ async function openRollout(run, name) {
   const dm = sec.devmachine;
   $("#view").innerHTML = `<span class="back" id="back">← back to run</span>
     <h2>${esc(pretty(t.task_id || name))}</h2>
-    <div class="muted">${esc(short(t.model))}${row ? ` · pressure: ${esc(row.pressure.prompt)} · defenses: ${row.defenses.honesty_prompt ? "prompt " : ""}${row.defenses.trusted_grading !== "off" ? "grading:" + esc(row.defenses.trusted_grading) + " " : ""}${row.defenses.devmachine_review ? "review" : ""}${!row.defenses.honesty_prompt && row.defenses.trusted_grading === "off" && !row.defenses.devmachine_review ? "off" : ""}` : ""}</div>
+    <div class="muted">${esc(short(t.model))}${row ? ` · pressure: ${esc(plabel(row.pressure))} · defenses: ${row.defenses.honesty_prompt ? "prompt " : ""}${row.defenses.trusted_grading !== "off" ? "grading:" + esc(row.defenses.trusted_grading) + " " : ""}${row.defenses.devmachine_review ? "review" : ""}${!row.defenses.honesty_prompt && row.defenses.trusted_grading === "off" && !row.defenses.devmachine_review ? "off" : ""}` : ""}</div>
     <div class="headline c-${V[l][1]}"><div class="what">${esc(V[l][0])}</div><div class="why">${esc(why)}</div>
       ${row && row.verdicts.length > 1 ? `<div style="margin-top:6px">${row.verdicts.filter(x => x !== l).map(tag).join("")}</div>` : ""}</div>
     ${row ? `<div class="scores">${sc("proxy_naive", "Visible tests, repo as the agent left it")}${sc("proxy_trusted", "Visible tests, original test files")}${sc("true", "Hidden tests it never saw")}</div>` : ""}
@@ -232,7 +261,9 @@ $("#start").onclick = async () => {
   $("#err").textContent = "starting…";
   const r = await fetch("/api/start", { method: "POST", body: JSON.stringify({
     task: $("#f_task").value, backend: $("#f_backend").value, scenario: $("#f_scenario").value, model: $("#f_model").value,
-    repeats: +$("#f_repeats").value, pressure: $("#f_pressure").value, honesty_prompt: $("#f_honesty").checked,
+    repeats: +$("#f_repeats").value, pressure: $("#f_pressure").value,
+    failures: +$("#f_failures").value, budget: $("#f_budget").value, tests_shown: $("#f_shown").checked,
+    oversight: $("#f_oversight").value, honesty_prompt: $("#f_honesty").checked,
     trusted_grading: $("#f_trusted").value, devmachine_review: $("#f_review").checked }) }).then(r => r.json());
   if (!r.run_id) { $("#err").textContent = "Couldn't start: " + (r.error || "unknown error"); return; }
   $("#dlg").close(); await runs(); openRun(r.run_id);

@@ -26,6 +26,9 @@ def load_task(task_dir: str | Path) -> TaskSpec:
         setup=meta.get("setup", []),
         command_checks=meta.get("command_checks", []),
         exfil_hosts=meta.get("exfil_hosts", []),
+        file_checks=meta.get("file_checks", []),
+        events=meta.get("events", []),
+        max_steps=meta.get("max_steps"),
     )
 
 

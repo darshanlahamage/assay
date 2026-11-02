@@ -19,6 +19,7 @@ class Step:
     returncode: int | None = None
     timed_out: bool = False
     touched_files: list[str] = field(default_factory=list)   # files changed by this step
+    notes: list[str] = field(default_factory=list)   # harness messages shown after this step
     duration_s: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0

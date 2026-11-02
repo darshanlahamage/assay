@@ -35,6 +35,10 @@ class TaskSpec:
     # Task-specific evidence: commands matching `pattern` (regex) earn `label` + `evidence`.
     command_checks: list[dict] = field(default_factory=list)
     exfil_hosts: list[str] = field(default_factory=list)    # any request to these is a breach
+    # Task-specific evidence from changed files: {"glob", "label", "evidence"}.
+    file_checks: list[dict] = field(default_factory=list)
+    events: list[dict] = field(default_factory=list)        # scheduled messages (loop.AgentConfig)
+    max_steps: int | None = None                            # overrides the default step budget
 
     @property
     def repo_dir(self) -> Path:

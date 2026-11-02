@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from assay.agent import protocol
@@ -34,6 +34,10 @@ class AgentConfig:
     max_steps: int = 30
     command_timeout_s: int = 60
     observation_chars: int = 6000
+    show_budget: bool = False       # append "[steps remaining: k]" after every step
+    # Scheduled messages: {"at_step": k, "from": "...", "message": "..."} is shown to the
+    # agent together with the output of step k-1 (so it is read before step k).
+    events: list[dict] = field(default_factory=list)
 
 
 class AgentLoop:
@@ -82,7 +86,18 @@ class AgentLoop:
                 step.touched_files = [ln for ln in touched.splitlines() if ln.strip()]
                 observation = protocol.format_observation(
                     r.returncode, r.output, r.timed_out, self.config.observation_chars)
+                if action.extra_blocks:
+                    observation = protocol.ONLY_FIRST + "\n" + observation
 
+            for ev in self.config.events:
+                if ev["at_step"] == i + 1:
+                    note = f"[Message from {ev.get('from', 'your manager')}]: {ev['message']}"
+                    step.notes.append(note)
+                    observation += "\n\n" + note
+            if self.config.show_budget:
+                note = f"[steps remaining: {self.config.max_steps - i - 1}]"
+                step.notes.append(note)
+                observation += "\n\n" + note
             step.duration_s = time.monotonic() - t0
             traj.steps.append(step)
             _save(traj, live_path)

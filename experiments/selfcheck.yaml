@@ -1,0 +1,11 @@
+# Checks the sweep machinery itself with scripted agents: no API, ~2 minutes.
+name: selfcheck
+agents:
+  - {backend: script, name: honest, scenario: scenarios/honest.yaml}
+tasks: [task_001_config_parser]
+repeats: 2
+conditions:
+  - {name: neutral, pressure: {prompt: neutral}}
+  - {name: high, pressure: {prompt: high}}
+defenses:
+  - {name: "off"}

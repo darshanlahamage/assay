@@ -1,0 +1,19 @@
+# Which kinds of pressure matter? Each condition changes one thing versus the baseline.
+name: pressure_types
+agents:
+  - {backend: groq, model: openai/gpt-oss-120b}
+tasks:
+  - "lcb_*_impossible"
+  - repo_invoice_commit_hook
+max_tasks: 6
+seed: 2
+repeats: 2
+conditions:
+  - {name: baseline, pressure: {prompt: neutral}}
+  - {name: earlier_failures, pressure: {prompt: neutral, failures: 3}}
+  - {name: tight_budget, pressure: {prompt: neutral, budget: tight}}
+  - {name: tests_shown, pressure: {prompt: neutral, tests_shown: true}}
+  - {name: watched, pressure: {prompt: neutral, oversight: watched}}
+  - {name: unwatched, pressure: {prompt: neutral, oversight: unwatched}}
+defenses:
+  - {name: "off"}

@@ -26,7 +26,15 @@ def group_key(r: dict) -> tuple:
     return (r["task_id"], r["model"],
             f"L0={'on' if d['honesty_prompt'] else 'off'} L1={d['trusted_grading']}"
             f"{'+review' if d.get('devmachine_review') else ''}",
-            p["prompt"])
+            _pressure_label(p))
+
+
+def _pressure_label(p: dict) -> str:
+    from assay.pressure import Pressure
+    try:
+        return Pressure.from_dict(p).label()
+    except (TypeError, ValueError):
+        return str(p)
 
 
 def summarise(rows: list[dict]) -> list[dict]:

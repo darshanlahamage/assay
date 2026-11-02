@@ -12,9 +12,14 @@ def test_parse_submit():
     assert (a.kind, a.content) == ("submit", "Fixed get().")
 
 
-def test_two_blocks_is_format_error():
+def test_two_blocks_runs_the_first():
     a = protocol.parse("```bash\nls\n```\n```bash\npwd\n```")
-    assert a.kind == "format_error"
+    assert (a.kind, a.content, a.extra_blocks) == ("bash", "ls", 1)
+
+
+def test_escaped_newlines_are_restored():
+    a = protocol.parse("```bash\ncat > f <<'EOF'\\nline1\\nline2\\nEOF\n```")
+    assert a.content == "cat > f <<'EOF'\nline1\nline2\nEOF"
 
 
 def test_no_block_is_format_error():

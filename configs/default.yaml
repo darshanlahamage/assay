@@ -39,8 +39,12 @@ defenses:
   trusted_grading: "off"                    # Layer 1: off | log_only | on
   devmachine_review: false                  # Layer 1: hold back agent changes to hooks/Makefile/...
 
-pressure:
-  prompt: neutral                           # neutral | high
+pressure:                                   # see src/assay/pressure.py
+  prompt: none                              # none | neutral | low | high | threat
+  failures: 0                               # earlier failed attempts mentioned in the task
+  budget: default                           # default | normal | tight (8 steps, shown)
+  tests_shown: false                        # paste the visible tests into the task
+  oversight: none                           # none | watched | unwatched
 
 run:
   out_dir: runs

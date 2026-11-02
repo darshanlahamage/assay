@@ -115,8 +115,10 @@ class GroqBackend:
         import httpx
 
         budget = self.max_prompt_chars
+        bad_calls = 0
         for attempt in range(self.max_retries):
-            msgs = [{"role": "system", "content": system}, *_compact(messages, budget)]
+            msgs = [{"role": "system", "content": system},
+                    *_as_tool_history(_compact(messages, budget))]
             body = {"model": self.model, "messages": msgs, "temperature": self.temperature,
                     "max_completion_tokens": self.max_output_tokens,
                     "tools": _TOOLS, "tool_choice": "auto"}
@@ -136,8 +138,15 @@ class GroqBackend:
                                   output_tokens=u.get("completion_tokens", 0))
             text = r.text
             if r.status_code == 400 and "tool_use_failed" in text:
-                # The model produced a malformed tool call. A real harness reports this back
-                # to the model instead of crashing; the loop turns it into a format error.
+                # The model produced a malformed tool call. Recover the command from the raw
+                # generation Groq returns; failing that, re-ask; failing that, report it back
+                # to the model like a real harness (the loop shows a format error).
+                salvaged = _salvage_tool_call(text)
+                if salvaged:
+                    return Completion(text=salvaged)
+                bad_calls += 1
+                if bad_calls <= 2:
+                    continue
                 return Completion(text="(invalid tool call: arguments were not valid JSON. "
                                        "Use the bash tool with a plain command string.)")
             if r.status_code == 413 or "too large" in text.lower():
@@ -195,6 +204,69 @@ def _tool_calls_to_text(msg: dict) -> str:
         cmd = cmd[-1] if cmd[:2] in (["bash", "-lc"], ["bash", "-c"]) else " ".join(cmd)
     note = "" if len(calls) == 1 else "\n(only the first tool call per turn is run)"
     return f"{content}{note}\n```bash\n{cmd}\n```"
+
+
+def _salvage_tool_call(error_body: str) -> str | None:
+    """Recover a tool call from Groq's `failed_generation` when its JSON was invalid."""
+    import json
+    import re
+
+    try:
+        gen = json.loads(error_body)["error"]["failed_generation"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    try:
+        call = json.loads(gen)
+        args = call.get("arguments", {})
+        if isinstance(args, str):
+            args = json.loads(args)
+        return _tool_calls_to_text({"content": "", "tool_calls": [
+            {"function": {"name": call.get("name", "bash"), "arguments": json.dumps(args)}}]})
+    except (ValueError, AttributeError):
+        pass
+    # Unescaped quotes/newlines inside the command: take everything between the first
+    # `"command": "` and the closing `"}`.
+    m = re.search(r'"(command|cmd|report)"\s*:\s*"(.*)"\s*\}\s*\}?\s*$', gen, re.DOTALL)
+    if not m:
+        return None
+    value = m.group(2).replace('\\n', '\n').replace('\\"', '"').replace("\\t", "\t")
+    kind = "submit" if m.group(1) == "report" else "bash"
+    return f"```{kind}\n{value}\n```"
+
+
+def _as_tool_history(messages: list[dict[str, str]]) -> list[dict]:
+    """Rewrite past actions as native tool calls and their outputs as tool results.
+
+    Tool-calling models (gpt-oss) otherwise see their own actions as text blocks and start
+    imitating that text format instead of calling tools.
+    """
+    import json
+
+    from assay.agent import protocol
+
+    out: list[dict] = []
+    pending: str | None = None
+    for i, m in enumerate(messages):
+        if m["role"] == "assistant":
+            a = protocol.parse(m["content"])
+            if a.kind in ("bash", "submit"):
+                call_id = f"call_{i}"
+                name, args = ("bash", {"command": a.content}) if a.kind == "bash" \
+                    else ("submit", {"report": a.content})
+                out.append({"role": "assistant", "content": a.reasoning or None,
+                            "tool_calls": [{"id": call_id, "type": "function", "function": {
+                                "name": name, "arguments": json.dumps(args)}}]})
+                pending = call_id
+                continue
+            out.append({"role": "assistant", "content": m["content"]})
+        elif pending is not None:
+            out.append({"role": "tool", "tool_call_id": pending, "content": m["content"]})
+            pending = None
+            continue
+        else:
+            out.append({"role": m["role"], "content": m["content"]})
+        pending = None
+    return out
 
 
 def _compact(messages: list[dict[str, str]], max_chars: int) -> list[dict[str, str]]:

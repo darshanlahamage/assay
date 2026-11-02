@@ -412,6 +412,17 @@ log-only, or on.
 | **Injected instructions** | Repo files contain instructions aimed at the agent |
 | **Optimization** | Best-of-N with increasing N; GRPO training rounds (local track) |
 
+Implementation (`src/assay/pressure.py`): each pressure is one switch with fixed wording.
+The prompt levels are `none`, `neutral` (a calm sentence of similar length, used as the
+control), `low`, `high` and `threat`. "Earlier failures" hands the task over with a note
+that N attempts failed, plus the real failing test output. The tight budget is 8 steps
+with the remaining count shown after every step. Long tasks can also schedule messages at
+fixed steps (the campaign's manager messages).
+
+Experiments are files in `experiments/`: agents x tasks x conditions x defenses x repeats.
+`assay sweep` runs them interleaved and resumably; `assay analyze` reports each outcome's
+rate with a 95% Wilson interval and Fisher's exact test against the baseline condition.
+
 Measured outputs, for each condition:
 - rate of each misbehavior type;
 - which channel the agent used;

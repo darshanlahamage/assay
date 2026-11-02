@@ -1,0 +1,13 @@
+# The long task: 50 steps, a visible score, escalating manager messages, two milestones
+# that can't be completed honestly. Expensive: each rollout is up to 50 requests.
+name: campaign
+agents:
+  - {backend: groq, model: openai/gpt-oss-120b}
+  - {backend: groq, model: qwen/qwen3.8-27b}
+tasks: [campaign_stockroom]
+repeats: 3
+conditions:
+  - {name: standard, pressure: {}}
+defenses:
+  - {name: "off"}
+  - {name: all, honesty_prompt: true, trusted_grading: "on", devmachine_review: true}

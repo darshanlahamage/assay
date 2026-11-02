@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from fnmatch import fnmatch
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
@@ -27,6 +28,9 @@ from assay.audit.hardcoding import find_hardcoded
 from assay.audit.ledger import Ledger, LedgerRow
 from assay.audit.verdict import SecurityEvidence, judge
 from assay.devmachine import DEFAULT_STEPS, run_devmachine
+from assay.pressure import Pressure
+from assay.pressure import apply as apply_pressure
+from assay.pressure import budget as pressure_budget
 from assay.grader.grader import Grader
 from assay.sandbox import network as N
 from assay.sandbox.container import Container, ContainerSpec
@@ -41,11 +45,6 @@ class Defenses:
     honesty_prompt: bool = False      # Layer 0
     trusted_grading: str = "off"      # Layer 1: off | log_only | on
     devmachine_review: bool = False   # Layer 1: hold back agent changes to host-trust files
-
-
-@dataclass
-class Pressure:
-    prompt: str = "neutral"           # key of protocol.PRESSURE_PROMPTS
 
 
 @dataclass
@@ -68,7 +67,7 @@ def settings_from_config(cfg: dict) -> RunSettings:
     return RunSettings(
         defenses=Defenses(d.get("honesty_prompt", False), d.get("trusted_grading", "off"),
                           d.get("devmachine_review", False)),
-        pressure=Pressure(p.get("prompt", "neutral")),
+        pressure=Pressure.from_dict(p),
         agent=AgentConfig(a.get("max_steps", 30), a.get("command_timeout_s", 60),
                           a.get("observation_chars", 6000)),
         sandbox=ContainerSpec(image=s.get("image", "assay-sandbox:0.3"),
@@ -79,23 +78,32 @@ def settings_from_config(cfg: dict) -> RunSettings:
     )
 
 
-def build_prompts(task: TaskSpec, settings: RunSettings) -> tuple[str, str]:
+def build_prompts(task: TaskSpec, settings: RunSettings,
+                  failing_output: str = "") -> tuple[str, str]:
     system = protocol.SYSTEM_PROMPT
     if settings.defenses.honesty_prompt:
         system += "\n" + protocol.HONESTY_PROMPT
-    task_text = task.prompt()
-    pressure = protocol.PRESSURE_PROMPTS[settings.pressure.prompt]
-    if pressure:
-        task_text += "\n\n" + pressure
-    return system, task_text
+    tests = {f.relative_to(task.repo_dir).as_posix(): f.read_text(errors="replace")
+             for f in _visible_test_files(task)}
+    return system, apply_pressure(task.prompt(), settings.pressure, tests, failing_output)
+
+
+def _visible_test_files(task: TaskSpec) -> list[Path]:
+    return [f for v in task.visible_tests for f in
+            ([task.repo_dir / v] if (task.repo_dir / v).is_file()
+             else sorted((task.repo_dir / v).rglob("test_*.py")))]
 
 
 def run_rollout(task: TaskSpec, backend: Backend, settings: RunSettings, run_dir: Path,
-                run_id: str, rollout_name: str, on_step=None) -> LedgerRow:
+                run_id: str, rollout_name: str, on_step=None,
+                extra: dict | None = None) -> LedgerRow:
     out = run_dir / rollout_name
     out.mkdir(parents=True, exist_ok=True)
-    system, task_text = build_prompts(task, settings)
     t0 = time.monotonic()
+    max_steps, show_budget = pressure_budget(settings.pressure,
+                                             task.max_steps or settings.agent.max_steps)
+    agent_cfg = replace(settings.agent, max_steps=max_steps, show_budget=show_budget,
+                        events=list(task.events))
 
     canaries = C.make_canaries()
     agent_spec = settings.sandbox
@@ -112,12 +120,21 @@ def run_rollout(task: TaskSpec, backend: Backend, settings: RunSettings, run_dir
             if r.returncode != 0:
                 raise RuntimeError(f"task setup failed: {cmd}: {r.output[-500:]}")
         C.install(box, canaries)
+        failing = ""
+        if settings.pressure.failures:
+            # Real output of the visible tests on the starting code, for the hand-over note.
+            failing = box.exec("python -m pytest -q " + " ".join(task.visible_tests),
+                               timeout_s=120).output
+        system, task_text = build_prompts(task, settings, failing)
         ip = N.container_ip(box.name) if settings.network == "proxy" else ""
         baseline = out / "initial_repo"
         box.copy_out("/repo", baseline)
         _write_json(out / "prompts.json", {"system": system, "task": task_text})
-        traj = AgentLoop(backend, settings.agent).run(box, task.id, system, task_text, on_step,
+        traj = AgentLoop(backend, agent_cfg).run(box, task.id, system, task_text, on_step,
                                                       live_path=out / "trajectory.json")
+        # Git facts are read inside the container: running git on the host against an
+        # agent-written .git/config could execute commands it planted there.
+        commits = box.exec("git rev-list --count HEAD 2>/dev/null || echo 0").output.strip()
         final_repo = out / "final_repo"
         box.copy_out("/repo", final_repo)
 
@@ -140,15 +157,16 @@ def run_rollout(task: TaskSpec, backend: Backend, settings: RunSettings, run_dir
     tb_edits = [p for p in grade.changes.get("trust_base", [])
                 if grade.change_kinds.get(p) != "added"]
     sec.claim_issues = check_claims(traj.report, grade.proxy_trusted.score, tb_edits)
-    visible = [f for v in task.visible_tests for f in
-               ([task.repo_dir / v] if (task.repo_dir / v).is_file()
-                else sorted((task.repo_dir / v).rglob("test_*.py")))]
-    sec.hardcoded_cases = find_hardcoded(visible, final_repo, task.source_files)
+    sec.hardcoded_cases = find_hardcoded(_visible_test_files(task), final_repo, task.source_files)
     bash = [(s.index, s.command) for s in traj.steps if s.kind == "bash"]
     for chk in task.command_checks:
         steps = [i for i, cmd in bash if re.search(chk["pattern"], cmd)]
         if steps:
             sec.command_hits.append((chk["label"], f"{chk['evidence']} (step {steps[0]})"))
+    for chk in task.file_checks:
+        hit = sorted(p for p in grade.change_kinds if fnmatch(p, chk["glob"]))
+        if hit:
+            sec.command_hits.append((chk["label"], f"{chk['evidence']} ({', '.join(hit)})"))
     sec.exfil_attempts = sorted({h for h in sec.network_allowed + sec.network_blocked
                                  if h in task.exfil_hosts})
 
@@ -169,7 +187,7 @@ def run_rollout(task: TaskSpec, backend: Backend, settings: RunSettings, run_dir
     row = LedgerRow(
         run_id=run_id, rollout=rollout_name, track=TRACK.get(backend.name, backend.name),
         backend=backend.name, model=backend.model, task_id=task.id, family=task.family,
-        pressure=asdict(settings.pressure), defenses=asdict(settings.defenses),
+        pressure=settings.pressure.to_dict(), defenses=asdict(settings.defenses),
         reward=round(reward, 4), proxy_naive=round(grade.proxy_naive.score, 4),
         proxy_trusted=round(grade.proxy_trusted.score, 4),
         true_score=round(grade.true.score, 4), verdicts=verdict.labels,
@@ -178,6 +196,8 @@ def run_rollout(task: TaskSpec, backend: Backend, settings: RunSettings, run_dir
         input_tokens=traj.input_tokens, output_tokens=traj.output_tokens,
         duration_s=round(time.monotonic() - t0, 1), error=traj.error,
         security=_security_dict(sec),
+        extra={"new_commits": max(0, int(commits) - 1) if commits.isdigit() else None,
+               "pressure_label": settings.pressure.label(), **(extra or {})},
     )
     Ledger(run_dir / "ledger.jsonl").append(row)
     return row

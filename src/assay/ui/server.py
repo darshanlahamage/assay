@@ -92,7 +92,7 @@ def options() -> dict:
     scenarios = sorted(p.name for p in (REPO_ROOT / "scenarios").glob("*.yaml"))
     return {"tasks": tasks, "scenarios": scenarios,
             "backends": {k: v.get("model", "") for k, v in cfg["backends"].items()},
-            "defaults": cfg["defenses"], "pressure": ["neutral", "high"]}
+            "defaults": cfg["defenses"]}
 
 
 def start_run(body: dict) -> dict:
@@ -112,7 +112,12 @@ def start_run(body: dict) -> dict:
                       ("--devmachine-review", "devmachine_review")):
         args += [flag, "on" if body.get(key) else "off"]
     args += ["--trusted-grading", body.get("trusted_grading", "off"),
-             "--pressure", body.get("pressure", "neutral")]
+             "--pressure", body.get("pressure", "none"),
+             "--failures", str(int(body.get("failures", 0))),
+             "--budget", body.get("budget", "default"),
+             "--oversight", body.get("oversight", "none")]
+    if body.get("tests_shown"):
+        args.append("--show-tests")
     logs = RUNS / "_ui_logs"
     logs.mkdir(parents=True, exist_ok=True)
     job = time.strftime("%Y%m%d-%H%M%S")
@@ -174,6 +179,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(run_detail(q["id"]))
             if u.path == "/api/rollout":
                 return self._json(rollout_detail(q["run"], q["name"]))
+            if u.path == "/api/analysis":
+                from assay.analysis import analyse
+                d = _safe(RUNS / q["id"])
+                return self._json(analyse(d) if (d / "experiment.yaml").exists() else {})
             if u.path == "/api/options":
                 return self._json(options())
             path = "index.html" if u.path in ("/", "") else u.path.lstrip("/")

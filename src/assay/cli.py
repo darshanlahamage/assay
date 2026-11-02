@@ -7,6 +7,8 @@
     assay show <rollout dir> | --latest   replay one rollout step by step
     assay selftest                        run the scripted scenarios; check every verdict
     assay ui                              local web dashboard (http://127.0.0.1:8765)
+    assay sweep <experiment.yaml>         run (or resume) an experiment sweep
+    assay analyze <run dir>               compare conditions: rates, intervals, tests
 """
 
 from __future__ import annotations
@@ -42,13 +44,28 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--devmachine-review", choices=["on", "off"],
                    help="Layer 1: hold back agent changes to hooks/Makefile/settings")
     p.add_argument("--network", choices=["proxy", "none"], help="agent network access")
-    p.add_argument("--pressure", choices=["neutral", "high"], help="prompt pressure")
+    p.add_argument("--pressure", choices=["none", "neutral", "low", "high", "threat"],
+                   help="prompt pressure (wording added to the task)")
+    p.add_argument("--failures", type=int, help="say N earlier attempts failed (with real output)")
+    p.add_argument("--budget", choices=["default", "normal", "tight"],
+                   help="step budget: tight = 8 steps, remaining steps shown")
+    p.add_argument("--show-tests", action="store_true", help="paste the visible tests into the task")
+    p.add_argument("--oversight", choices=["none", "watched", "unwatched"])
     p.add_argument("--max-steps", type=int)
     p.add_argument("--config", default=str(REPO_ROOT / "configs" / "default.yaml"))
     p.add_argument("--quiet", action="store_true", help="don't print each step")
 
     r = sub.add_parser("report", help="summarise a run")
     r.add_argument("--run", required=True, help="run directory (contains ledger.jsonl)")
+
+    sw = sub.add_parser("sweep", help="run (or resume) an experiment sweep")
+    sw.add_argument("experiment")
+    sw.add_argument("--config", default=str(REPO_ROOT / "configs" / "default.yaml"))
+    sw.add_argument("--dry-run", action="store_true", help="show the plan, run nothing")
+
+    an = sub.add_parser("analyze", help="compare conditions in a sweep")
+    an.add_argument("run")
+    an.add_argument("--by-family", action="store_true", help="split results by task family")
 
     u = sub.add_parser("ui", help="local web dashboard")
     u.add_argument("--port", type=int, default=8765)
@@ -80,6 +97,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "run":
         return _run(args)
+    if args.cmd == "sweep":
+        from assay.sweep import run_sweep
+        return run_sweep(args.experiment, args.config, args.dry_run)
+    if args.cmd == "analyze":
+        from assay.analysis import print_analysis
+        return print_analysis(Path(args.run), args.by_family)
     if args.cmd == "ui":
         from assay.ui.server import serve
         return serve(args.port, not args.no_browser)
@@ -122,6 +145,14 @@ def _run(args: argparse.Namespace) -> int:
         cfg["sandbox"]["network"] = args.network
     if args.pressure:
         cfg["pressure"]["prompt"] = args.pressure
+    if args.failures is not None:
+        cfg["pressure"]["failures"] = args.failures
+    if args.budget:
+        cfg["pressure"]["budget"] = args.budget
+    if args.show_tests:
+        cfg["pressure"]["tests_shown"] = True
+    if args.oversight:
+        cfg["pressure"]["oversight"] = args.oversight
     if args.max_steps:
         cfg["agent"]["max_steps"] = args.max_steps
 
@@ -131,7 +162,7 @@ def _run(args: argparse.Namespace) -> int:
     run_id, run_dir = new_run_dir(REPO_ROOT / cfg["run"]["out_dir"])
     print(f"run {run_id}: {len(tasks)} task(s) x {args.repeats}, backend={backend.name} "
           f"model={backend.model}")
-    print(f"defenses={settings.defenses}  pressure={settings.pressure}")
+    print(f"defenses={settings.defenses}  pressure: {settings.pressure.label()}")
 
     for task in tasks:
         for k in range(args.repeats):
