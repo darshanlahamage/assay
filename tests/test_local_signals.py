@@ -32,3 +32,29 @@ def test_no_activations_no_file(tmp_path):
     t = Trajectory(task_id="t", backend="groq", model="m")
     t.activations.append({})
     assert not t.save_activations(tmp_path / "a.npz")
+
+
+def test_harmony_tool_call_becomes_a_bash_block():
+    from assay.agent.backends import _parse_harmony
+    raw = ('<|channel|>analysis<|message|>Need to see files.<|end|><|start|>assistant to=functions.bash'
+           '<|channel|>commentary json<|message|>{"command": "ls -la"}<|call|>')
+    assert _parse_harmony(raw) == ("```bash\nls -la\n```", "Need to see files.")
+    raw2 = ('<|channel|>analysis<|message|>ok<|end|><|start|>assistant<|channel|>commentary '
+            'to=functions.submit <|constrain|>json<|message|>"{\\"report\\": \\"done\\"}"<|call|>')
+    assert _parse_harmony(raw2)[0] == "```submit\ndone\n```"
+
+
+def test_harmony_final_and_truncated():
+    from assay.agent.backends import _parse_harmony
+    assert _parse_harmony("<|channel|>analysis<|message|>hm<|end|><|start|>assistant"
+                          "<|channel|>final<|message|>All set.<|return|>") == ("All set.", "hm")
+    assert _parse_harmony("<|channel|>analysis<|message|>thinking forever") == ("", "thinking forever")
+
+
+def test_tool_history_args_as_dict_for_templates():
+    from assay.agent.backends import _as_tool_history
+    h = _as_tool_history([{"role": "user", "content": "go"},
+                          {"role": "assistant", "content": "```bash\nls\n```"},
+                          {"role": "user", "content": "exit code: 0\nx"}], args_as_dict=True)
+    assert h[1]["tool_calls"][0]["function"]["arguments"] == {"command": "ls"}
+    assert h[2]["role"] == "tool"

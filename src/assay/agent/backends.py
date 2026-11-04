@@ -23,6 +23,8 @@ class Completion:
     entropies: list[float] = field(default_factory=list)
     # Local track only: {"prompt_last" | "action" | "gen_mean": array [n_layers, hidden]}
     activations: dict = field(default_factory=dict)
+    # The model's private reasoning (gpt-oss "analysis" channel), when the backend returns it.
+    thinking: str = ""
 
 
 class Backend(Protocol):
@@ -57,6 +59,7 @@ class GeminiBackend:
         self.max_output_tokens = max_output_tokens
         self.max_retries = max_retries
         self.quota_wait_max_s = quota_wait_max_s
+        self.reasoning_effort = reasoning_effort
 
     def complete(self, system: str, messages: list[dict[str, str]]) -> Completion:
         from google.genai import errors, types
@@ -108,7 +111,7 @@ class GroqBackend:
 
     def __init__(self, model: str, temperature: float = 0.7, max_output_tokens: int = 4096,
                  max_prompt_chars: int = 18000, max_retries: int = 8,
-                 quota_wait_max_s: float = 0) -> None:
+                 quota_wait_max_s: float = 0, reasoning_effort: str | None = None) -> None:
         key = os.environ.get("GROQ_API_KEY")
         if not key:
             raise RuntimeError("GROQ_API_KEY is not set (put it in .env)")
@@ -132,6 +135,8 @@ class GroqBackend:
             body = {"model": self.model, "messages": msgs, "temperature": self.temperature,
                     "max_completion_tokens": self.max_output_tokens,
                     "tools": _TOOLS, "tool_choice": "auto"}
+            if self.reasoning_effort:
+                body["reasoning_effort"] = self.reasoning_effort
             try:
                 r = httpx.post(self.URL, headers=self._headers, json=body, timeout=180)
             except httpx.TransportError:
@@ -145,7 +150,8 @@ class GroqBackend:
                 msg = d["choices"][0]["message"]
                 return Completion(text=_tool_calls_to_text(msg),
                                   input_tokens=u.get("prompt_tokens", 0),
-                                  output_tokens=u.get("completion_tokens", 0))
+                                  output_tokens=u.get("completion_tokens", 0),
+                                  thinking=msg.get("reasoning") or "")
             text = r.text
             if r.status_code == 400 and "tool_use_failed" in text:
                 # The model produced a malformed tool call. Recover the command from the raw
@@ -261,7 +267,7 @@ def _salvage_tool_call(error_body: str) -> str | None:
     return f"```{kind}\n{value}\n```"
 
 
-def _as_tool_history(messages: list[dict[str, str]]) -> list[dict]:
+def _as_tool_history(messages: list[dict[str, str]], args_as_dict: bool = False) -> list[dict]:
     """Rewrite past actions as native tool calls and their outputs as tool results.
 
     Tool-calling models (gpt-oss) otherwise see their own actions as text blocks and start
@@ -282,7 +288,9 @@ def _as_tool_history(messages: list[dict[str, str]]) -> list[dict]:
                     else ("submit", {"report": a.content})
                 out.append({"role": "assistant", "content": a.reasoning or None,
                             "tool_calls": [{"id": call_id, "type": "function", "function": {
-                                "name": name, "arguments": json.dumps(args)}}]})
+                                "name": name,
+                                # The API wants a JSON string; chat templates encode it themselves.
+                                "arguments": args if args_as_dict else json.dumps(args)}}]})
                 pending = call_id
                 continue
             out.append({"role": "assistant", "content": m["content"]})
@@ -318,7 +326,9 @@ class MLXBackend:
 
     def __init__(self, model: str, temperature: float = 0.7, max_tokens: int = 4096,
                  enable_thinking: bool = False, adapter_path: str | None = None,
-                 activation_layers: tuple[int, ...] = (), max_prompt_chars: int = 80000) -> None:
+                 activation_layers: tuple = (), max_prompt_chars: int = 80000,
+                 top_p: float = 0.0, top_k: int = 0, presence_penalty: float = 0.0,
+                 reasoning_effort: str = "medium") -> None:
         from assay.inference.engine import InferenceEngine
 
         self.model = model
@@ -326,22 +336,65 @@ class MLXBackend:
         self.max_tokens = max_tokens
         self.enable_thinking = enable_thinking
         self.max_prompt_chars = max_prompt_chars
+        self.sampling = {"top_p": top_p, "top_k": top_k, "presence_penalty": presence_penalty}
+        # gpt-oss gets the same native tools as on Groq (the harmony format), so local and
+        # API runs of the same model differ only in where the weights run.
+        self.harmony = "gpt-oss" in model
+        self.reasoning_effort = reasoning_effort
         self.engine = InferenceEngine(model, adapter_path=adapter_path,
                                       activation_layers=tuple(activation_layers))
 
     def complete(self, system: str, messages: list[dict[str, str]]) -> Completion:
         # Same shortening as the Groq track, so long rollouts fit the context window.
         messages = _compact(messages, self.max_prompt_chars)
-        prompt = self.engine.format_chat(
-            [{"role": "system", "content": system}, *messages],
-            enable_thinking=self.enable_thinking,
-        )
+        if self.harmony:
+            prompt = self.engine.format_chat(
+                [{"role": "system", "content": system}, *_as_tool_history(messages, args_as_dict=True)],
+                tools=_TOOLS, reasoning_effort=self.reasoning_effort)
+        else:
+            prompt = self.engine.format_chat(
+                [{"role": "system", "content": system}, *messages],
+                enable_thinking=self.enable_thinking,
+            )
         out = self.engine.generate(prompt, max_tokens=self.max_tokens,
-                                   temperature=self.temperature)
-        return Completion(text=out.text, input_tokens=out.prompt_tokens,
+                                   temperature=self.temperature, **self.sampling)
+        text, thinking = (_parse_harmony(out.text) if self.harmony else (out.text, ""))
+        return Completion(text=text, input_tokens=out.prompt_tokens,
                           output_tokens=len(out.token_ids),
                           logprobs=out.logprobs, entropies=out.entropies,
-                          activations=out.activations)
+                          activations=out.activations, thinking=thinking)
+
+
+def _parse_harmony(raw: str) -> tuple[str, str]:
+    """gpt-oss raw output -> (reply in the text protocol, analysis-channel reasoning).
+
+    A tool call ("to=functions.bash ... <|message|>{json}<|call|>") becomes a ```bash or
+    ```submit block, exactly as Groq's tool calls do; a final-channel message is kept as
+    text. Handles output with or without the special tokens rendered."""
+    import json
+
+    S = re.S
+    thinking = "\n".join(x.strip() for x in re.findall(
+        r"<\|channel\|>analysis<\|message\|>(.*?)(?=<\|end\|>|<\|start\|>|$)", raw, S))
+    call = re.search(r"to=functions\.(\w+)[^<]*(?:<\|channel\|>[^<]*)?(?:<\|constrain\|>[^<]*)?"
+                     r"<\|message\|>(.*?)(?=<\|call\|>|<\|end\|>|<\|return\|>|$)", raw, S)
+    if call:
+        name, body = call.group(1), call.group(2).strip()
+        try:
+            args = json.loads(body)
+            if isinstance(args, str):          # double-encoded
+                args = json.loads(args)
+        except json.JSONDecodeError:
+            args = {"report": body} if name == "submit" else {"command": body}
+        msg = {"content": "", "tool_calls": [{"function": {"name": name,
+                                                          "arguments": json.dumps(args)}}]}
+        return _tool_calls_to_text(msg).strip(), thinking
+    final = re.search(r"<\|channel\|>final<\|message\|>(.*?)(?=<\|return\|>|<\|end\|>|$)", raw, S)
+    if final:
+        return final.group(1).strip(), thinking
+    if "<|channel|>" in raw:                   # only reasoning, cut off by the token limit
+        return "", thinking
+    return raw, thinking
 
 
 class ScriptedBackend:
@@ -377,11 +430,14 @@ def make_backend(name: str, cfg: dict) -> Backend:
         return MLXBackend(c["model"], c.get("temperature", 0.7), c.get("max_tokens", 4096),
                           c.get("enable_thinking", False), c.get("adapter_path"),
                           tuple(c.get("activation_layers") or ()),
-                          c.get("max_prompt_chars", 80000))
+                          c.get("max_prompt_chars", 80000), c.get("top_p", 0.0),
+                          c.get("top_k", 0), c.get("presence_penalty", 0.0),
+                          c.get("reasoning_effort", "medium"))
     if name == "groq":
         return GroqBackend(c["model"], c.get("temperature", 0.7), c.get("max_output_tokens", 4096),
                            c.get("max_prompt_chars", 18000),
-                           quota_wait_max_s=c.get("quota_wait_max_s", 0))
+                           quota_wait_max_s=c.get("quota_wait_max_s", 0),
+                           reasoning_effort=c.get("reasoning_effort"))
     if name == "script":
         return ScriptedBackend(c["scenario"])
     raise ValueError(f"unknown backend {name!r}")

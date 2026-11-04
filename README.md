@@ -58,7 +58,8 @@ experiment sweeps with analysis, and recording of model internals on the local t
 |---|---|---|
 | API | Groq | `openai/gpt-oss-120b` (free tier: 200k tokens/day = roughly 4-8 rollouts; 8k tokens/min) |
 | API | Gemini | `gemini-3.5-flash` (free tier: ~1 rollout/day) |
-| Local | MLX | `mlx-community/Qwen3-14B-4bit` (~8.3 GB) |
+| API | Groq | `openai/gpt-oss-20b` (same model as the local one; checks the local copy) |
+| Local | MLX | `mlx-community/gpt-oss-20b-MXFP4-Q8` (11.2 GB) and `mlx-community/Qwen3-14B-4bit` (7.7 GB) |
 | Scripted | fixed replies | `scenarios/*.yaml` — for testing the harness itself |
 
 ## Setup (Apple Silicon)
@@ -96,10 +97,10 @@ echo "GROQ_API_KEY=..." >> .env          # API track; .env is gitignored
     --scenario scenarios/breach_hook.yaml
 
 # Experiments: every combination of agent x task x pressure x defense, repeated
-./.venv/bin/assay sweep experiments/prompt_pressure.yaml       # resumable; --dry-run to preview
-./.venv/bin/assay sweep experiments/prompt_pressure.yaml --wait-for-quota   # unattended, over days
-./.venv/bin/assay analyze runs/sweep-prompt_pressure            # rates, 95% ranges, tests
-./.venv/bin/assay internals runs/sweep-local_prompt_pressure --permutations 100   # local track
+./.venv/bin/assay sweep experiments/scale.yaml --dry-run        # preview the plan
+./.venv/bin/assay sweep experiments/scale.yaml --wait-for-quota # run/resume; API lanes wait for quota
+./.venv/bin/assay analyze runs/sweep-scale                      # rates, 95% ranges, tests
+./.venv/bin/assay internals runs/sweep-scale --permutations 100 # local agents: probes, directions
 
 # Pressure on a single run
 ./.venv/bin/assay run --task benchmark/repo_invoice_commit_hook --backend groq \
@@ -143,3 +144,16 @@ docker/       sandbox image, proxy image
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
+
+## Experiments
+
+| File | Question | Agents |
+|---|---|---|
+| `experiments/scale.yaml` | Does pressure wording cause misbehaviour, and does model size change it? | gpt-oss-20b (local + Groq), gpt-oss-120b (Groq), Qwen3-14B (local) |
+| `experiments/pressure_types.yaml` | Which kinds of pressure matter (failures, budget, tests shown, oversight)? | local |
+| `experiments/defenses.yaml` | Do the defenses hold under pressure? | local |
+| `experiments/campaign.yaml` | The long 50-step task with an escalating manager | gpt-oss-20b local, gpt-oss-120b and Qwen3.8-27B on Groq |
+
+Agents run in parallel lanes: each API model has its own lane (and its own daily budget),
+and all local models share one lane because only one fits in memory at a time. See
+DESIGN.md §6.1 for the memory and speed measurements behind the model choice.

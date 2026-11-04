@@ -68,6 +68,10 @@ class InferenceEngine:
 
             self._model, self._tokenizer = load(self.model_name, adapter_path=self.adapter_path)
             layers = self._model.model.layers
+            # Fractions (0.5 = halfway down) resolve against this model's depth.
+            self.activation_layers = tuple(
+                int(round(x * (len(layers) - 1))) if isinstance(x, float) else int(x)
+                for x in self.activation_layers)
             for i in self.activation_layers:
                 layers[i] = _Recorder(layers[i], i, self._records)
 
@@ -93,6 +97,9 @@ class InferenceEngine:
         temperature: float = 0.7,
         capture_logprobs: bool = True,
         capture_activations: bool = True,
+        top_p: float = 0.0,
+        top_k: int = 0,
+        presence_penalty: float = 0.0,
     ) -> GenerationOutput:
         """Generate a completion, capturing per-token logprob and entropy, and the
         residual stream at `activation_layers` (if any).
@@ -104,7 +111,7 @@ class InferenceEngine:
         self._ensure_loaded()
         from mlx_lm import stream_generate
         from mlx_lm.models.cache import make_prompt_cache, trim_prompt_cache
-        from mlx_lm.sample_utils import make_sampler
+        from mlx_lm.sample_utils import make_logits_processors, make_sampler
 
         tokens = self._tokenizer.encode(prompt, add_special_tokens=False)
         # Reuse the cache for the longest shared prefix; always feed at least one token.
@@ -118,13 +125,17 @@ class InferenceEngine:
             self._cache = make_prompt_cache(self._model)
         suffix = tokens[common:]
 
-        sampler = make_sampler(temp=temperature)
+        sampler = make_sampler(temp=temperature, top_p=top_p, top_k=top_k)
+        # Note: a penalty changes the distribution that logprob/entropy are read from.
+        procs = (make_logits_processors(presence_penalty=presence_penalty)
+                 if presence_penalty else None)
         out = GenerationOutput(text="", prompt_tokens=len(tokens), cached_tokens=common)
         pieces: list[str] = []
         self._records.clear()
         try:
             for resp in stream_generate(self._model, self._tokenizer, suffix, max_tokens=max_tokens,
-                                        sampler=sampler, prompt_cache=self._cache):
+                                        sampler=sampler, logits_processors=procs,
+                                        prompt_cache=self._cache):
                 pieces.append(resp.text)
                 tok = int(resp.token)
                 out.token_ids.append(tok)

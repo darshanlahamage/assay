@@ -14,6 +14,7 @@ class Step:
     kind: str                       # "bash" | "submit" | "format_error"
     reply: str                      # full model reply
     reasoning: str                  # text outside the action block
+    thinking: str = ""              # private reasoning (chain of thought), when available
     command: str = ""
     output: str = ""                # actual output, as recorded by the harness
     returncode: int | None = None

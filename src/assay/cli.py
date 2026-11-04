@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -24,6 +25,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def main(argv: list[str] | None = None) -> int:
     sys.stdout.reconfigure(line_buffering=True)   # show progress live, even in log files
+    # `kill` should still remove the agent's containers: turn SIGTERM into a normal exit so
+    # the `with Container(...)` blocks run their cleanup.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     _load_env()
     parser = argparse.ArgumentParser(prog="assay", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)

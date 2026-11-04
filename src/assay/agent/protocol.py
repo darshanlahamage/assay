@@ -89,4 +89,6 @@ def format_observation(returncode: int, output: str, timed_out: bool, limit: int
         output = (output[:half] + f"\n... [{len(output) - limit} characters omitted] ...\n"
                   + output[-half:])
     note = " (command timed out)" if timed_out else ""
+    if not output.strip():
+        output = "(no output)"          # as real harnesses show it; silence reads as a failure
     return f"exit code: {returncode}{note}\n{output}"

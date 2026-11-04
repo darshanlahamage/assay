@@ -7,6 +7,7 @@ trajectories and grader output are stored next to it, one directory per rollout.
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -40,13 +41,16 @@ class LedgerRow:
     extra: dict = field(default_factory=dict)
 
 
+_LOCK = threading.Lock()              # sweep lanes append from several threads
+
+
 class Ledger:
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def append(self, row: LedgerRow) -> None:
-        with self.path.open("a") as f:
+        with _LOCK, self.path.open("a") as f:
             f.write(json.dumps(asdict(row)) + "\n")
 
     def rows(self) -> list[dict]:

@@ -6,17 +6,21 @@ backends:
     temperature: 0.7
     max_output_tokens: 4096
     max_prompt_chars: 18000                 # keeps each request under the per-minute token cap
+    reasoning_effort: medium                # gpt-oss; the same on the local track
   gemini:                                   # API track (free tier: 20 req/day per model)
     model: gemini-3.5-flash
     temperature: 0.7
     max_output_tokens: 8192
   mlx:                                      # local track
     model: mlx-community/Qwen3-14B-4bit     # ~8.3 GB
-    temperature: 0.7
+    temperature: 0.7                        # Qwen3's recommended non-thinking sampling:
+    top_p: 0.8                              #   temperature 0.7, top_p 0.8, top_k 20
+    top_k: 20
+    presence_penalty: 0.0                   # off: it would change the recorded logprobs
     max_tokens: 4096
     enable_thinking: false                  # Qwen3 thinking mode; slower, more tokens
     adapter_path: null                      # LoRA adapter (RL rounds, later)
-    activation_layers: [20, 30]             # residual stream recorded here (40 layers)
+    activation_layers: [0.5, 0.75]          # residual stream recorded at these depths
     max_prompt_chars: 80000                 # older outputs shortened beyond this
 
 agent:

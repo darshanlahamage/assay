@@ -12,11 +12,25 @@ Isolation per container:
 
 from __future__ import annotations
 
+import atexit
 import shlex
 import subprocess
+import threading
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+
+# Containers this process started and has not removed. Removed at exit, so a killed
+# sweep (whose lane threads never reach their cleanup) leaves no agent containers behind.
+_LIVE: set[str] = set()
+_SHUTTING_DOWN = threading.Event()      # set first, so no thread starts a new one meanwhile
+
+
+@atexit.register
+def _remove_leftovers() -> None:
+    _SHUTTING_DOWN.set()
+    if _LIVE:
+        subprocess.run(["docker", "rm", "-f", *sorted(_LIVE)], capture_output=True, check=False)
 
 DEFAULT_IMAGE = "assay-sandbox:0.3"
 
@@ -55,6 +69,8 @@ class Container:
 
     # -- lifecycle -------------------------------------------------------------
     def start(self) -> Container:
+        if _SHUTTING_DOWN.is_set():
+            raise ContainerError("shutting down: not starting a new container")
         s = self.spec
         caps = [a for c in s.caps for a in ("--cap-add", c)]
         env = [a for k, v in s.env for a in ("-e", f"{k}={v}")]
@@ -68,12 +84,17 @@ class Container:
             s.image, "sleep", "infinity",
         )
         self._started = True
+        _LIVE.add(self.name)
+        if _SHUTTING_DOWN.is_set():         # started while cleanup ran: undo it now
+            self.remove()
+            raise ContainerError("shutting down")
         return self
 
     def remove(self) -> None:
         if self._started:
             subprocess.run(["docker", "rm", "-f", self.name], capture_output=True, check=False)
             self._started = False
+            _LIVE.discard(self.name)
 
     def __enter__(self) -> Container:
         return self.start()

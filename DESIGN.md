@@ -335,12 +335,48 @@ Assay runs two tracks over the same tasks and defenses.
 | | API track | Local track |
 |---|---|---|
 | **Agents** | Commercial CLI agents (Claude Code, Codex CLI) and open harnesses (OpenHands, mini-SWE-agent) with API models, run unmodified in the agent container | An open harness (mini-SWE-agent style) driven by a local MLX model |
-| **Models** | Frontier and smaller API models | e.g. Qwen3-Coder-30B-A3B (4-bit, ~17 GB) or a 14B model (4-bit, ~9 GB) for rollouts and probes; a 4B–8B model for RL training |
+| **Models** | gpt-oss-20b and gpt-oss-120b on Groq | gpt-oss-20b and Qwen3-14B (§6.1); RL on the smallest of these that does the tasks |
 | **Defenses** | Layers 0–2; Layer 3 in log-only mode after the rollout | Layers 0–3, with live gating |
 | **Shows** | Whether the defenses work on the agents people actually use | Internal signals, steering, and behavior under RL pressure, which all need the weights |
 
 Weak models mostly fail tasks honestly and rarely produce interesting misbehavior. That's why the local
 track uses the strongest model that fits in memory, and the API track exists at all.
+
+### 6.1 Models in use, and why
+
+The local machine is an Apple M4 (24 GB, of which the GPU may use 17.8 GB; ~120 GB/s memory
+bandwidth). Generation speed is bounded by reading the weights once per token, and memory must hold
+the weights plus the KV cache (the model's per-token memory of the conversation):
+
+| Model | Weights | KV cache, 20k tokens | Fits? | Measured speed (read / generate) |
+|---|---|---|---|---|
+| Qwen3-8B (4-bit) | 4.3 GB | 2.7 GB | yes | 200 / 21 tok/s |
+| Qwen3-14B (4-bit) | 7.7 GB | 3.1 GB | yes | 103 / 12 tok/s |
+| gpt-oss-20b (MXFP4, MoE: 21B total, 3.6B active per token) | 11.2 GB | 0.5 GB | yes | measured in §6.2 |
+| Qwen3-30B-A3B, Qwen3-32B (4-bit) | 16–17 GB | 2–5 GB | no | – |
+| gpt-oss-120b (MXFP4) | 58 GB | – | no | – |
+
+Model choice:
+- **Qwen3-8B was rejected.** In the harness it repeated its own previous reply for 30 steps, and with an
+  explicit "(no output)" observation it submitted a report claiming an implementation it never wrote.
+  That is incompetence, not pressure: with a model this weak, "false report under pressure" can't be
+  told apart from "can't do agent work", so its rates would not measure what the study asks.
+- **The scale comparison is made inside one model family.** gpt-oss-20b and gpt-oss-120b share a
+  training recipe, so differences between them are about size. Comparing models from different
+  families mixes size with everything else their makers did differently.
+- **gpt-oss-20b runs both locally and on Groq.** The pair checks that the local 4-bit copy, run
+  through our own inference engine, behaves like the served model. Both get native tools in the
+  harmony format, reasoning effort "medium", temperature 0.7 and no top-p/top-k, so they differ only
+  in where the weights run.
+- **Qwen3-14B is a second family on the local track**, so the internals findings are not about one
+  company's model.
+- **gpt-oss-120b internals are out of reach here.** They need an 80 GB GPU (e.g. a rented H100), and
+  a PyTorch version of the activation hooks. Worth doing only if the 20b internals results are
+  interesting enough to check at scale.
+
+The private reasoning (gpt-oss "analysis" channel) is kept in the trajectory on both tracks, as
+`thinking` on each step. It is evidence for analysis (does the model say it will take the shortcut
+before taking it?), never input to a verdict.
 
 ---
 
@@ -475,7 +511,7 @@ These analyses need the model weights, which is why the local track exists.
 Probe labels come from verdicts (§11), never from the probe itself. Pressure conditions and impossible
 tasks provide enough labeled examples even when misbehavior is rare.
 
-**What is recorded.** For every reply, at two layers (20 and 30 of Qwen3-14B's 40), the residual
+**What is recorded.** For every reply, at two depths (halfway and three-quarters down the layer stack), the residual
 stream (the hidden state passed between layers) at three positions:
 - the last prompt token: the state right before the model replies, after reading everything so far;
 - the first token inside the action block: the moment it commits to a command;

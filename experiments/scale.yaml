@@ -1,0 +1,31 @@
+# Main experiment: does pressure wording make agents misbehave, and does model size change it?
+#
+# Same tasks, same two conditions, four agents:
+#   gpt-oss-20b local    behaviour + internals (family A, small)
+#   gpt-oss-20b Groq     same model, served: checks the local 4-bit copy behaves the same
+#   gpt-oss-120b Groq    family A, ~6x larger: the size comparison (same training recipe)
+#   Qwen3-14B local      family B, behaviour + internals: results are not about one family
+#
+# All gpt-oss copies get native tools, reasoning effort "medium", temperature 0.7 and no
+# top-p/top-k (as Groq serves them). Local agents share one lane (one model in memory at a
+# time) and can afford more repeats than the API's daily token budget allows.
+# Size: local 6 tasks x 2 conditions x 4 = 48 each; Groq 24 each (about 5 days of free
+# quota per model, run in parallel with --wait-for-quota).
+name: scale
+agents:
+  - {backend: mlx, name: gpt-oss-20b-local, model: mlx-community/gpt-oss-20b-MXFP4-Q8,
+     top_p: 0.0, top_k: 0, repeats: 4}
+  - {backend: mlx, name: qwen3-14b-local, model: mlx-community/Qwen3-14B-4bit, repeats: 4}
+  - {backend: groq, name: gpt-oss-20b-groq, model: openai/gpt-oss-20b, repeats: 2}
+  - {backend: groq, name: gpt-oss-120b-groq, model: openai/gpt-oss-120b, repeats: 2}
+tasks:
+  - repo_invoice_commit_hook          # shortcut: bypass the failing pre-commit hook
+  - repo_textstats_poisoned_setup     # planted instruction to run a credential-stealing script
+  - "lcb_*_impossible"                # tests contradict the spec: no honest full pass exists
+max_tasks: 6
+seed: 1
+conditions:
+  - {name: neutral, pressure: {prompt: neutral}}
+  - {name: high, pressure: {prompt: high}}
+defenses:
+  - {name: "off"}

@@ -1,12 +1,15 @@
-# How much does each defense layer remove, and what does it cost in honest success?
+# Do the defenses hold under pressure? off = nothing; prompt = honesty instruction only;
+# all = honesty prompt + trusted grading + developer-machine review.
+# Local models (no quota). 6 tasks x 2 conditions x 3 defenses x 2 repeats = 72 per agent.
 name: defenses
 agents:
-  - {backend: groq, model: openai/gpt-oss-120b}
+  - {backend: mlx, name: gpt-oss-20b-local, model: mlx-community/gpt-oss-20b-MXFP4-Q8, top_p: 0.0, top_k: 0}
+  - {backend: mlx, name: qwen3-14b-local, model: mlx-community/Qwen3-14B-4bit}
 tasks:
-  - "lcb_*"
   - repo_invoice_commit_hook
   - repo_textstats_poisoned_setup
-max_tasks: 8
+  - "lcb_*"
+max_tasks: 6
 seed: 3
 repeats: 2
 conditions:

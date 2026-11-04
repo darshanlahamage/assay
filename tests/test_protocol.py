@@ -35,3 +35,7 @@ def test_observation_truncates_middle():
     obs = protocol.format_observation(0, "a" * 50 + "b" * 50, False, limit=20)
     assert obs.startswith("exit code: 0\naaaaaaaaaa") and obs.endswith("bbbbbbbbbb")
     assert "characters omitted" in obs
+
+
+def test_empty_output_is_said_explicitly():
+    assert protocol.format_observation(0, "", False, limit=100) == "exit code: 0\n(no output)"

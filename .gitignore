@@ -37,3 +37,4 @@ eval_tmp/
 # Generated from ImpossibleBench (no license declared on the dataset): regenerate with
 #   python -m assay.tasks.import_impossiblebench --count 20
 benchmark/lcb_*/
+tools/node_modules/
