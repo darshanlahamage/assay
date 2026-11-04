@@ -67,7 +67,8 @@ def _name(v) -> str:
     return str(v)
 
 
-def run_sweep(exp_path: str, config_path: str, dry_run: bool = False) -> int:
+def run_sweep(exp_path: str, config_path: str, dry_run: bool = False,
+              wait_for_quota: bool = False) -> int:
     exp = yaml.safe_load(Path(exp_path).read_text())
     base_cfg = load_config(config_path)
     jobs = plan(exp)
@@ -89,6 +90,8 @@ def run_sweep(exp_path: str, config_path: str, dry_run: bool = False) -> int:
         cfg = copy.deepcopy(base_cfg)
         agent = j["agent"]
         cfg["backends"].setdefault(agent["backend"], {})
+        if wait_for_quota:
+            cfg["backends"][agent["backend"]]["quota_wait_max_s"] = 6 * 3600
         if agent.get("model"):
             cfg["backends"][agent["backend"]]["model"] = agent["model"]
         cfg["pressure"] = {**cfg.get("pressure", {}), **j["condition"].get("pressure", {})}

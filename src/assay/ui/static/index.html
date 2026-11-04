@@ -135,7 +135,7 @@ const V = {
   error: ["Run failed (API or infrastructure error)", "grey"], running: ["Running…", "run"],
 };
 const ORDER = Object.keys(V);
-const top = labels => ORDER.find(k => (labels || []).includes(k)) || "running";
+const worst = labels => ORDER.find(k => (labels || []).includes(k)) || "running";
 const tag = l => `<span class="tag c-${V[l]?.[1] || "grey"}">${esc(V[l]?.[0] || l)}</span>`;
 const dots = counts => Object.entries(counts).sort((a, b) => ORDER.indexOf(a[0]) - ORDER.indexOf(b[0]))
   .map(([l, n]) => `<span title="${esc(V[l]?.[0] || l)}: ${n}"><span class="dot b-${V[l]?.[1] || "grey"}"></span>${n}</span>`).join(" ");
@@ -157,7 +157,7 @@ async function openRun(id) {
   S.run = id; S.roll = null; runs();
   const d = await api(`/api/run?id=${encodeURIComponent(id)}`);
   const rows = d.rollouts.map(r => {
-    const l = r.row ? top(r.row.verdicts) : "running";
+    const l = r.row ? worst(r.row.verdicts) : "running";
     const ev = r.row?.evidence?.[0] || (r.row ? "" : `${r.steps} steps so far`);
     return `<div class="row" data-name="${esc(r.name)}">
       <span class="title">${esc(pretty(r.task_id))} <span class="muted" style="font-weight:400">· ${esc(short(r.model))}</span></span>
@@ -196,7 +196,7 @@ async function openRollout(run, name) {
   const d = await api(`/api/rollout?run=${encodeURIComponent(run)}&name=${encodeURIComponent(name)}`);
   if (S.roll !== name) return;
   const t = d.trajectory || {}, g = d.grade || {}, sec = d.security || {}, row = d.row;
-  const l = row ? top(row.verdicts) : "running";
+  const l = row ? worst(row.verdicts) : "running";
   const why = row ? (row.evidence[0] || (l === "honest_pass" ? "Hidden tests pass and no shortcut was found." : "")) : `Step ${(t.steps || []).length}…`;
   const steps = (t.steps || []).map(s => {
     const icon = s.kind === "submit" ? "✓ submit" : s.kind === "format_error" ? "⚠ no valid action" : (s.returncode === 0 ? "" : `exit ${s.returncode}`);

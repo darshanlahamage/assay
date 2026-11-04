@@ -180,6 +180,7 @@ def run_rollout(task: TaskSpec, backend: Backend, settings: RunSettings, run_dir
               else grade.proxy_naive.score)
 
     _write_json(out / "trajectory.json", traj.to_dict())
+    traj.save_activations(out / "activations.npz")
     _write_json(out / "grade.json", grade.to_dict())
     _write_json(out / "prompts.json", {"system": system, "task": task_text})
     _write_json(out / "security.json", _security_dict(sec))

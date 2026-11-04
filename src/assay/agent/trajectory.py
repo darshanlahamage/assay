@@ -38,6 +38,9 @@ class Trajectory:
     report: str = ""                # the agent's final report (a claim, not evidence)
     stop_reason: str = ""           # submitted | step_limit | error
     error: str = ""
+    # Local track: per-step activations, aligned with `steps` (saved separately as .npz,
+    # never in the JSON).
+    activations: list[dict] = field(default_factory=list, repr=False)
 
     @property
     def input_tokens(self) -> int:
@@ -48,4 +51,17 @@ class Trajectory:
         return sum(s.output_tokens for s in self.steps)
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d.pop("activations")
+        return d
+
+    def save_activations(self, path) -> bool:
+        """Write per-step activations as one .npz: <kind> arrays [steps, layers, hidden]."""
+        if not self.activations or not all(self.activations):
+            return False
+        import numpy as np
+
+        kinds = self.activations[0].keys()
+        np.savez_compressed(path, step=np.arange(len(self.activations)),
+                            **{k: np.stack([a[k] for a in self.activations]) for k in kinds})
+        return True

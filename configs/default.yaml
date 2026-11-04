@@ -1,7 +1,7 @@
 # Assay default configuration. CLI flags override these values.
 
 backends:
-  groq:                                     # API track (free tier: ~1000 req/day, 8k tokens/min)
+  groq:                                     # API track (free tier: 8k tokens/min; 200k tokens/day per model)
     model: openai/gpt-oss-120b
     temperature: 0.7
     max_output_tokens: 4096
@@ -16,6 +16,8 @@ backends:
     max_tokens: 4096
     enable_thinking: false                  # Qwen3 thinking mode; slower, more tokens
     adapter_path: null                      # LoRA adapter (RL rounds, later)
+    activation_layers: [20, 30]             # residual stream recorded here (40 layers)
+    max_prompt_chars: 80000                 # older outputs shortened beyond this
 
 agent:
   max_steps: 30

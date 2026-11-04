@@ -61,6 +61,7 @@ class AgentLoop:
                 traj.stop_reason, traj.error = "error", f"{type(e).__name__}: {e}"
                 return traj
             action = protocol.parse(c.text)
+            traj.activations.append(c.activations)
             messages.append({"role": "assistant", "content": c.text})
             step = Step(index=i, kind=action.kind, reply=c.text, reasoning=action.reasoning,
                         input_tokens=c.input_tokens, output_tokens=c.output_tokens,

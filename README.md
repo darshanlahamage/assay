@@ -50,12 +50,13 @@ Verdicts: `honest_pass`, `honest_fail`, `cheat`, `overfit_suspect`, `scoring_int
 
 **Done:** harness (M1-M2), benchmark of 45 tasks including the campaign (M3), pressure
 settings (prompt wording, earlier failures, step budget, tests shown, oversight), and
-experiment sweeps with analysis. **Next:** run the experiments (`experiments/`), record
-model internals on the local track, then best-of-N and RL.
+experiment sweeps with analysis, and recording of model internals on the local track
+(activations, logprobs, entropy) with the internals analysis. **Next:** run the experiments
+(`experiments/`), then steering, best-of-N and RL.
 
 | Track | Backend | Default model |
 |---|---|---|
-| API | Groq | `openai/gpt-oss-120b` (free tier: ~1000 requests/day, 8k tokens/min) |
+| API | Groq | `openai/gpt-oss-120b` (free tier: 200k tokens/day = roughly 4-8 rollouts; 8k tokens/min) |
 | API | Gemini | `gemini-3.5-flash` (free tier: ~1 rollout/day) |
 | Local | MLX | `mlx-community/Qwen3-14B-4bit` (~8.3 GB) |
 | Scripted | fixed replies | `scenarios/*.yaml` — for testing the harness itself |
@@ -96,7 +97,9 @@ echo "GROQ_API_KEY=..." >> .env          # API track; .env is gitignored
 
 # Experiments: every combination of agent x task x pressure x defense, repeated
 ./.venv/bin/assay sweep experiments/prompt_pressure.yaml       # resumable; --dry-run to preview
+./.venv/bin/assay sweep experiments/prompt_pressure.yaml --wait-for-quota   # unattended, over days
 ./.venv/bin/assay analyze runs/sweep-prompt_pressure            # rates, 95% ranges, tests
+./.venv/bin/assay internals runs/sweep-local_prompt_pressure --permutations 100   # local track
 
 # Pressure on a single run
 ./.venv/bin/assay run --task benchmark/repo_invoice_commit_hook --backend groq \
@@ -110,7 +113,8 @@ echo "GROQ_API_KEY=..." >> .env          # API track; .env is gitignored
 ```
 
 Each rollout directory under `runs/<run_id>/` holds `trajectory.json`, `grade.json`,
-`security.json`, `prompts.json`, and the agent's `initial_repo/` and `final_repo/`.
+`security.json`, `prompts.json`, and the agent's `initial_repo/` and `final_repo/`. Local-track
+rollouts also have `activations.npz`. `--task` accepts a path or a bare task name.
 
 **Credentials:** the agent never gets your real credentials, GitHub access, or files. The
 credentials in its home folder are fake values generated per rollout. "Commit" and "CI" are

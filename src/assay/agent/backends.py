@@ -7,6 +7,7 @@ return per-token logprobs and entropies, which the API cannot give.
 from __future__ import annotations
 
 import os
+import re
 import time
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -20,6 +21,8 @@ class Completion:
     output_tokens: int = 0
     logprobs: list[float] = field(default_factory=list)
     entropies: list[float] = field(default_factory=list)
+    # Local track only: {"prompt_last" | "action" | "gen_mean": array [n_layers, hidden]}
+    activations: dict = field(default_factory=dict)
 
 
 class Backend(Protocol):
@@ -53,6 +56,7 @@ class GeminiBackend:
         self.temperature = temperature
         self.max_output_tokens = max_output_tokens
         self.max_retries = max_retries
+        self.quota_wait_max_s = quota_wait_max_s
 
     def complete(self, system: str, messages: list[dict[str, str]]) -> Completion:
         from google.genai import errors, types
@@ -91,16 +95,20 @@ class GeminiBackend:
 class GroqBackend:
     """API track via Groq (OpenAI-compatible chat API), e.g. openai/gpt-oss-120b.
 
-    Groq's free tier allows ~1000 requests/day but only ~8000 tokens/minute, so long
-    conversations are kept under `max_prompt_chars` by shortening the oldest command
-    outputs first (the task message and recent turns stay whole).
+    Groq's free tier allows ~8000 tokens/minute and, per model, a daily token budget
+    (200k for gpt-oss-120b: roughly 4-8 rollouts). Long conversations are kept under
+    `max_prompt_chars` by shortening the oldest command outputs first (the task message
+    and recent turns stay whole). With `quota_wait_max_s` > 0, hitting the daily budget
+    pauses until Groq says tokens are available again (the budget is a rolling window),
+    instead of giving up; sweeps use this to run unattended over several days.
     """
 
     name = "groq"
     URL = "https://api.groq.com/openai/v1/chat/completions"
 
     def __init__(self, model: str, temperature: float = 0.7, max_output_tokens: int = 4096,
-                 max_prompt_chars: int = 18000, max_retries: int = 8) -> None:
+                 max_prompt_chars: int = 18000, max_retries: int = 8,
+                 quota_wait_max_s: float = 0) -> None:
         key = os.environ.get("GROQ_API_KEY")
         if not key:
             raise RuntimeError("GROQ_API_KEY is not set (put it in .env)")
@@ -116,7 +124,9 @@ class GroqBackend:
 
         budget = self.max_prompt_chars
         bad_calls = 0
-        for attempt in range(self.max_retries):
+        attempt = -1
+        while attempt < self.max_retries - 1:
+            attempt += 1
             msgs = [{"role": "system", "content": system},
                     *_as_tool_history(_compact(messages, budget))]
             body = {"model": self.model, "messages": msgs, "temperature": self.temperature,
@@ -155,6 +165,13 @@ class GroqBackend:
             if r.status_code == 429:
                 if _is_daily_quota(text) or "tokens per day" in text.lower() or "(TPD)" in text \
                         or "(RPD)" in text:
+                    wait = _retry_in(text)
+                    if wait is not None and wait <= self.quota_wait_max_s:
+                        print(f"      [groq daily budget used up; waiting {wait / 60:.0f} min]",
+                              flush=True)
+                        time.sleep(wait + 20)
+                        attempt -= 1            # waiting for quota is not a failed attempt
+                        continue
                     raise QuotaExhausted(f"{self.model}: daily quota exhausted ({text[:300]})")
                 wait = float(r.headers.get("retry-after", 0) or 0)
                 time.sleep(min(90, max(wait, 2 ** attempt)))
@@ -164,6 +181,16 @@ class GroqBackend:
                 continue
             raise RuntimeError(f"Groq API error {r.status_code}: {text[:500]}")
         raise RuntimeError("Groq API: retries exhausted")
+
+
+def _retry_in(text: str) -> float | None:
+    """Seconds from Groq's "Please try again in 1h2m3.4s" (None if absent)."""
+    m = re.search(r"try again in ((?:\d+h)?(?:\d+m)?(?:[\d.]+s)?)", text)
+    if not m or not m.group(1):
+        return None
+    parts = {unit: v for v, unit in re.findall(r"([\d.]+)([hms])", m.group(1))}
+    return (float(parts.get("h", 0)) * 3600 + float(parts.get("m", 0)) * 60
+            + float(parts.get("s", 0)))
 
 
 # Native tools for models trained on tool calling (gpt-oss). Calls are converted to the
@@ -290,16 +317,21 @@ class MLXBackend:
     name = "mlx"
 
     def __init__(self, model: str, temperature: float = 0.7, max_tokens: int = 4096,
-                 enable_thinking: bool = False, adapter_path: str | None = None) -> None:
+                 enable_thinking: bool = False, adapter_path: str | None = None,
+                 activation_layers: tuple[int, ...] = (), max_prompt_chars: int = 80000) -> None:
         from assay.inference.engine import InferenceEngine
 
         self.model = model
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.enable_thinking = enable_thinking
-        self.engine = InferenceEngine(model, adapter_path=adapter_path)
+        self.max_prompt_chars = max_prompt_chars
+        self.engine = InferenceEngine(model, adapter_path=adapter_path,
+                                      activation_layers=tuple(activation_layers))
 
     def complete(self, system: str, messages: list[dict[str, str]]) -> Completion:
+        # Same shortening as the Groq track, so long rollouts fit the context window.
+        messages = _compact(messages, self.max_prompt_chars)
         prompt = self.engine.format_chat(
             [{"role": "system", "content": system}, *messages],
             enable_thinking=self.enable_thinking,
@@ -308,7 +340,8 @@ class MLXBackend:
                                    temperature=self.temperature)
         return Completion(text=out.text, input_tokens=out.prompt_tokens,
                           output_tokens=len(out.token_ids),
-                          logprobs=out.logprobs, entropies=out.entropies)
+                          logprobs=out.logprobs, entropies=out.entropies,
+                          activations=out.activations)
 
 
 class ScriptedBackend:
@@ -342,10 +375,13 @@ def make_backend(name: str, cfg: dict) -> Backend:
                              c.get("max_output_tokens", 8192))
     if name == "mlx":
         return MLXBackend(c["model"], c.get("temperature", 0.7), c.get("max_tokens", 4096),
-                          c.get("enable_thinking", False), c.get("adapter_path"))
+                          c.get("enable_thinking", False), c.get("adapter_path"),
+                          tuple(c.get("activation_layers") or ()),
+                          c.get("max_prompt_chars", 80000))
     if name == "groq":
         return GroqBackend(c["model"], c.get("temperature", 0.7), c.get("max_output_tokens", 4096),
-                           c.get("max_prompt_chars", 18000))
+                           c.get("max_prompt_chars", 18000),
+                           quota_wait_max_s=c.get("quota_wait_max_s", 0))
     if name == "script":
         return ScriptedBackend(c["scenario"])
     raise ValueError(f"unknown backend {name!r}")

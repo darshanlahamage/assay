@@ -9,6 +9,7 @@
     assay ui                              local web dashboard (http://127.0.0.1:8765)
     assay sweep <experiment.yaml>         run (or resume) an experiment sweep
     assay analyze <run dir>               compare conditions: rates, intervals, tests
+    assay internals <run dir>             local track: pressure direction, probe, lead time
 """
 
 from __future__ import annotations
@@ -62,10 +63,17 @@ def main(argv: list[str] | None = None) -> int:
     sw.add_argument("experiment")
     sw.add_argument("--config", default=str(REPO_ROOT / "configs" / "default.yaml"))
     sw.add_argument("--dry-run", action="store_true", help="show the plan, run nothing")
+    sw.add_argument("--wait-for-quota", action="store_true",
+                    help="when an API's daily budget runs out, wait for it instead of stopping")
 
     an = sub.add_parser("analyze", help="compare conditions in a sweep")
     an.add_argument("run")
     an.add_argument("--by-family", action="store_true", help="split results by task family")
+
+    it = sub.add_parser("internals", help="model-internals analysis of a local-track sweep")
+    it.add_argument("run")
+    it.add_argument("--permutations", type=int, default=0,
+                    help="permutation test for each probe (slow; 100 is a good number)")
 
     u = sub.add_parser("ui", help="local web dashboard")
     u.add_argument("--port", type=int, default=8765)
@@ -99,7 +107,10 @@ def main(argv: list[str] | None = None) -> int:
         return _run(args)
     if args.cmd == "sweep":
         from assay.sweep import run_sweep
-        return run_sweep(args.experiment, args.config, args.dry_run)
+        return run_sweep(args.experiment, args.config, args.dry_run, args.wait_for_quota)
+    if args.cmd == "internals":
+        from assay.internals import print_internals
+        return print_internals(Path(args.run), args.permutations)
     if args.cmd == "analyze":
         from assay.analysis import print_analysis
         return print_analysis(Path(args.run), args.by_family)
@@ -156,7 +167,10 @@ def _run(args: argparse.Namespace) -> int:
     if args.max_steps:
         cfg["agent"]["max_steps"] = args.max_steps
 
-    tasks = [load_task(args.task)] if args.task else load_suite(args.suite)
+    task_path = Path(args.task) if args.task else None
+    if task_path and not task_path.exists() and (REPO_ROOT / "benchmark" / args.task).exists():
+        task_path = REPO_ROOT / "benchmark" / args.task       # a bare task name
+    tasks = [load_task(task_path)] if task_path else load_suite(args.suite)
     settings = settings_from_config(cfg)
     backend = make_backend(args.backend, cfg)
     run_id, run_dir = new_run_dir(REPO_ROOT / cfg["run"]["out_dir"])
