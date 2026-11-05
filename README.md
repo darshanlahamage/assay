@@ -102,6 +102,7 @@ echo "GROQ_API_KEY=..." >> .env          # API track; .env is gitignored
 ./.venv/bin/assay analyze runs/sweep-scale                      # rates, 95% ranges, tests
 ./.venv/bin/assay internals runs/sweep-scale --permutations 100 # local agents: probes, directions
 ./.venv/bin/assay bestofn runs/sweep-scale                      # does keeping the top run pick cheats?
+./.venv/bin/assay cot runs/sweep-scale --show                   # did the reasoning say so beforehand?
 
 # Pressure on a single run
 ./.venv/bin/assay run --task benchmark/repo_invoice_commit_hook --backend groq \

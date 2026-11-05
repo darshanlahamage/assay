@@ -11,6 +11,7 @@
     assay analyze <run dir>               compare conditions: rates, intervals, tests
     assay internals <run dir>             local track: pressure direction, probe, lead time
     assay bestofn <run dir>               best-of-N selection: does picking the top run pick cheats?
+    assay cot <run dir>                   does the reasoning say it will cheat before it does?
 """
 
 from __future__ import annotations
@@ -75,6 +76,10 @@ def main(argv: list[str] | None = None) -> int:
     an.add_argument("run")
     an.add_argument("--by-family", action="store_true", help="split results by task family")
 
+    ct = sub.add_parser("cot", help="what the agent's reasoning said before it misbehaved")
+    ct.add_argument("run")
+    ct.add_argument("--show", action="store_true", help="list the flagged rollouts")
+
     bn = sub.add_parser("bestofn", help="best-of-N selection pressure from a sweep's repeats")
     bn.add_argument("run")
 
@@ -116,6 +121,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "sweep":
         from assay.sweep import run_sweep
         return run_sweep(args.experiment, args.config, args.dry_run, args.wait_for_quota)
+    if args.cmd == "cot":
+        from assay.cot import print_cot
+        return print_cot(Path(args.run), args.show)
     if args.cmd == "bestofn":
         from assay.bestofn import print_bestofn
         return print_bestofn(Path(args.run))

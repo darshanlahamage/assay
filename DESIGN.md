@@ -505,6 +505,21 @@ versus the trusted score. A rising naive curve with a flat trusted curve is rewa
 selection pressure, and shows how much the trusted grader protects it. The formula is checked against
 brute-force enumeration (`tests/test_bestofn.py`).
 
+### What the reasoning said (`assay cot`)
+
+Both tracks keep the agent's reasoning per step (gpt-oss's private "analysis" channel, plus the text
+around each command). A keyword monitor matches it against fixed patterns for shortcuts (editing or
+skipping tests, bypassing the hook, hardcoding, faking a dependency, running the planted script) and
+for noticing that a task is impossible. Per agent it reports how often a misbehaving rollout's
+reasoning named the shortcut at or before the offending step, how often a clean rollout was flagged,
+and, on impossible tasks, whether the agent noticed and whether its report told the user.
+
+The patterns were written before looking at any data and are not tuned to it. On the scripted
+cheaters they catch 0 of 9: those describe their shortcuts in paraphrase ("I'll simplify the test
+file", "committing without it") or write no reasoning at all. That is the known weakness of keyword
+monitors, and the reason defense layer 3 uses an LLM monitor, which this baseline must be compared
+against.
+
 ## 10. Model internals (local track)
 
 These analyses need the model weights, which is why the local track exists.
