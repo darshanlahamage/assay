@@ -43,13 +43,18 @@ class Trajectory:
     # never in the JSON).
     activations: list[dict] = field(default_factory=list, repr=False)
 
+    # Token totals over steps with known counts (-1 = unknown, e.g. a recovered tool call).
     @property
     def input_tokens(self) -> int:
-        return sum(s.input_tokens for s in self.steps)
+        return sum(s.input_tokens for s in self.steps if s.input_tokens > 0)
 
     @property
     def output_tokens(self) -> int:
-        return sum(s.output_tokens for s in self.steps)
+        return sum(s.output_tokens for s in self.steps if s.output_tokens > 0)
+
+    @property
+    def recovered_calls(self) -> int:
+        return sum(s.input_tokens < 0 for s in self.steps)
 
     def to_dict(self) -> dict:
         d = asdict(self)

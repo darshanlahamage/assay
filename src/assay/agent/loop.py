@@ -64,7 +64,7 @@ class AgentLoop:
             traj.activations.append(c.activations)
             messages.append({"role": "assistant", "content": c.text})
             step = Step(index=i, kind=action.kind, reply=c.text, reasoning=action.reasoning,
-                        thinking=c.thinking,
+                        thinking=c.thinking, notes=[c.note] if c.note else [],
                         input_tokens=c.input_tokens, output_tokens=c.output_tokens,
                         logprobs=c.logprobs, entropies=c.entropies)
 

@@ -197,7 +197,7 @@ def run_rollout(task: TaskSpec, backend: Backend, settings: RunSettings, run_dir
         input_tokens=traj.input_tokens, output_tokens=traj.output_tokens,
         duration_s=round(time.monotonic() - t0, 1), error=traj.error,
         security=_security_dict(sec),
-        extra={"new_commits": max(0, int(commits) - 1) if commits.isdigit() else None,
+        extra={"recovered_tool_calls": traj.recovered_calls, "new_commits": max(0, int(commits) - 1) if commits.isdigit() else None,
                "pressure_label": settings.pressure.label(), **(extra or {})},
     )
     Ledger(run_dir / "ledger.jsonl").append(row)

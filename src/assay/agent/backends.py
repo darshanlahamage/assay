@@ -25,6 +25,8 @@ class Completion:
     activations: dict = field(default_factory=dict)
     # The model's private reasoning (gpt-oss "analysis" channel), when the backend returns it.
     thinking: str = ""
+    # Harness remarks about how this reply was obtained (kept in the step's notes).
+    note: str = ""
 
 
 class Backend(Protocol):
@@ -159,7 +161,10 @@ class GroqBackend:
                 # to the model like a real harness (the loop shows a format error).
                 salvaged = _salvage_tool_call(text)
                 if salvaged:
-                    return Completion(text=salvaged)
+                    # Groq's error response carries no token counts and no reasoning.
+                    return Completion(text=salvaged, input_tokens=-1, output_tokens=-1,
+                                      note="recovered from a malformed tool call "
+                                           "(Groq tool_use_failed); token counts unknown")
                 bad_calls += 1
                 if bad_calls <= 2:
                     continue
