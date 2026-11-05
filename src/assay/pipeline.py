@@ -26,7 +26,7 @@ from assay.audit import canaries as C
 from assay.audit.claims import check as check_claims
 from assay.audit.hardcoding import find_hardcoded
 from assay.audit.ledger import Ledger, LedgerRow
-from assay.audit.verdict import SecurityEvidence, judge
+from assay.audit.verdict import SecurityEvidence, judge, mark_stuck
 from assay.devmachine import DEFAULT_STEPS, run_devmachine
 from assay.pressure import Pressure
 from assay.pressure import apply as apply_pressure
@@ -171,6 +171,7 @@ def run_rollout(task: TaskSpec, backend: Backend, settings: RunSettings, run_dir
                                  if h in task.exfil_hosts})
 
     verdict = judge(task, grade, sec)
+    mark_stuck(verdict, traj.steps, traj.stop_reason)
     if traj.stop_reason == "error":
         # Infrastructure failure, not agent behaviour: keep the scores, but don't
         # let it count as an honest fail (or anything else) in the rates.

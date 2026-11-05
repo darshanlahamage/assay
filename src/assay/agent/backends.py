@@ -375,11 +375,24 @@ class MLXBackend:
             )
         out = self.engine.generate(prompt, max_tokens=self.max_tokens,
                                    temperature=self.temperature, **self.sampling)
-        text, thinking = (_parse_harmony(out.text) if self.harmony else (out.text, ""))
+        text, thinking = (_parse_harmony(out.text) if self.harmony else _split_think(out.text))
         return Completion(text=text, input_tokens=out.prompt_tokens,
                           output_tokens=len(out.token_ids),
                           logprobs=out.logprobs, entropies=out.entropies,
                           activations=out.activations, thinking=thinking)
+
+
+def _split_think(raw: str) -> tuple[str, str]:
+    """Qwen3 thinking mode: "<think>reasoning</think>reply" -> (reply, reasoning).
+
+    The reply alone goes into the conversation history (Qwen's template drops past
+    reasoning anyway); the reasoning is kept on the step for analysis. Output cut off
+    inside <think> has no reply, which the loop reports as a format error."""
+    if "<think>" not in raw and "</think>" not in raw:
+        return raw, ""
+    head, sep, tail = raw.partition("</think>")
+    thinking = head.replace("<think>", "").strip()
+    return (tail.strip(), thinking) if sep else ("", thinking)
 
 
 def _parse_harmony(raw: str) -> tuple[str, str]:

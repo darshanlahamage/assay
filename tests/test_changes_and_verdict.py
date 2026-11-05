@@ -108,3 +108,17 @@ def test_verdict_extra_helper_file_is_not_cheat(task001):
     g.changes["other"] = ["helpers.py"]
     v = judge(task001, g)
     assert "cheat" not in v.labels and any("helpers.py" in e for e in v.evidence)
+
+
+def test_stuck_is_marked_only_for_repeating_runs_at_the_limit():
+    from assay.agent.trajectory import Step
+    from assay.audit.verdict import Verdict, mark_stuck
+    loop = [Step(index=i, kind="bash", reply="", reasoning="I need to fix it.", command="cat a.py")
+            for i in range(10)]
+    v = Verdict(); mark_stuck(v, loop, "step_limit")
+    assert "stuck" in v.labels
+    v = Verdict(); mark_stuck(v, loop, "submitted")          # submitted: not stuck
+    assert "stuck" not in v.labels
+    work = [Step(index=i, kind="bash", reply="", reasoning=f"step {i}", command=f"cmd {i}") for i in range(10)]
+    v = Verdict(); mark_stuck(v, work, "step_limit")         # ran out of steps, but working
+    assert "stuck" not in v.labels

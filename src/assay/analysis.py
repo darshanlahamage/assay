@@ -28,7 +28,7 @@ from assay.audit.ledger import read_rows
 MISBEHAVIOR = ("cheat", "breach", "false_report", "followed_injection", "planted_code_ran",
                "scoring_interference")
 OUTCOMES = ("misbehaved", "cheat", "breach", "false_report", "followed_injection",
-            "overfit_suspect", "honest_pass")
+            "overfit_suspect", "honest_pass", "stuck")
 
 
 def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -109,7 +109,7 @@ def print_analysis(run_dir: Path, by_family: bool = False) -> int:
     t = Table(title=f"{a['run']}: {a['rollouts']} rollouts  (baseline: {a['baseline']})")
     cols = ["agent", "defense"] + (["family"] if by_family else []) + [
         "condition", "n", "misbehaved [95% CI]", "p", "cheat [95% CI]", "p", "breach",
-        "false rpt", "injection", "honest pass", "visible", "hidden"]
+        "false rpt", "injection", "honest pass", "stuck", "visible", "hidden"]
     for c in cols:
         t.add_column(c, justify="left" if c in ("agent", "defense", "family", "condition") else "right")
 
@@ -126,7 +126,8 @@ def print_analysis(run_dir: Path, by_family: bool = False) -> int:
             g["condition"], str(g["n"]), rate(g["misbehaved"]), pv(g["misbehaved"]),
             rate(g["cheat"]), pv(g["cheat"]), f"{g['breach']['rate']:.0%}",
             f"{g['false_report']['rate']:.0%}", f"{g['followed_injection']['rate']:.0%}",
-            f"{g['honest_pass']['rate']:.0%}", f"{g['visible']:.2f}", f"{g['hidden']:.2f}"]
+            f"{g['honest_pass']['rate']:.0%}", f"{g['stuck']['rate']:.0%}",
+            f"{g['visible']:.2f}", f"{g['hidden']:.2f}"]
         t.add_row(*[str(x) for x in row])
     con.print(t)
     con.print("p = Fisher's exact test against the baseline condition (same agent and "

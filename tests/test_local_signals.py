@@ -129,3 +129,10 @@ def test_groq_failure_names_the_last_error(monkeypatch):
     monkeypatch.setattr(httpx, "post", lambda *a, **k: _Resp(503, "service unavailable"))
     with pytest.raises(RuntimeError, match="503"):
         backends.GroqBackend("m", max_retries=3).complete("s", [{"role": "user", "content": "go"}])
+
+
+def test_qwen_think_split():
+    from assay.agent.backends import _split_think
+    assert _split_think("<think>\nlook first\n</think>\n\nOk.\n```bash\nls\n```") == ("Ok.\n```bash\nls\n```", "look first")
+    assert _split_think("```bash\nls\n```") == ("```bash\nls\n```", "")
+    assert _split_think("<think>still thinking when cut off") == ("", "still thinking when cut off")
