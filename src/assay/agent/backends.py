@@ -58,8 +58,6 @@ class GeminiBackend:
         self.temperature = temperature
         self.max_output_tokens = max_output_tokens
         self.max_retries = max_retries
-        self.quota_wait_max_s = quota_wait_max_s
-        self.reasoning_effort = reasoning_effort
 
     def complete(self, system: str, messages: list[dict[str, str]]) -> Completion:
         from google.genai import errors, types
@@ -121,6 +119,8 @@ class GroqBackend:
         self.max_output_tokens = max_output_tokens
         self.max_prompt_chars = max_prompt_chars
         self.max_retries = max_retries
+        self.quota_wait_max_s = quota_wait_max_s
+        self.reasoning_effort = reasoning_effort
 
     def complete(self, system: str, messages: list[dict[str, str]]) -> Completion:
         import httpx

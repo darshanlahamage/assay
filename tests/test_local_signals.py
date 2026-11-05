@@ -75,3 +75,18 @@ def test_memory_guard(monkeypatch):
         engine._check_room("big", 12.0)
     monkeypatch.setattr(engine, "_local_weights_bytes", lambda m: None)
     engine._check_room("not-downloaded", 14.0)    # unknown size: no refusal
+
+
+def test_every_backend_builds_from_config(monkeypatch):
+    """Constructors and make_backend agree (a misplaced attribute once broke two backends)."""
+    from assay.agent.backends import make_backend
+    from assay.pipeline import load_config
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    cfg = load_config("configs/default.yaml")
+    cfg["backends"]["groq"]["quota_wait_max_s"] = 60
+    g = make_backend("groq", cfg)
+    assert g.quota_wait_max_s == 60 and g.reasoning_effort == "medium"
+    make_backend("gemini", cfg)
+    m = make_backend("mlx", cfg)            # does not load the model
+    assert m.engine.memory_limit_gb == 14
