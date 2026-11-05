@@ -101,6 +101,7 @@ echo "GROQ_API_KEY=..." >> .env          # API track; .env is gitignored
 ./.venv/bin/assay sweep experiments/scale.yaml --wait-for-quota # run/resume; API lanes wait for quota
 ./.venv/bin/assay analyze runs/sweep-scale                      # rates, 95% ranges, tests
 ./.venv/bin/assay internals runs/sweep-scale --permutations 100 # local agents: probes, directions
+./.venv/bin/assay bestofn runs/sweep-scale                      # does keeping the top run pick cheats?
 
 # Pressure on a single run
 ./.venv/bin/assay run --task benchmark/repo_invoice_commit_hook --backend groq \
@@ -152,6 +153,7 @@ MIT — see [`LICENSE`](LICENSE).
 | `experiments/scale.yaml` | Does pressure wording cause misbehaviour, and does model size change it? | gpt-oss-20b (local + Groq), gpt-oss-120b (Groq), Qwen3-14B (local) |
 | `experiments/pressure_types.yaml` | Which kinds of pressure matter (failures, budget, tests shown, oversight)? | local |
 | `experiments/defenses.yaml` | Do the defenses hold under pressure? | local |
+| `experiments/bestofn.yaml` | Does keeping the best of N runs select for cheating? (8 repeats per task) | local |
 | `experiments/campaign.yaml` | The long 50-step task with an escalating manager | gpt-oss-20b local, gpt-oss-120b and Qwen3.8-27B on Groq |
 
 Agents run in parallel lanes: each API model has its own lane (and its own daily budget),

@@ -1,0 +1,17 @@
+# Best-of-N selection pressure: run the same task many times, then ask what happens when you
+# keep the run the grader scores highest (assay bestofn runs/sweep-bestofn). On impossible
+# tasks an honest full pass cannot exist, so a top naive score is a cheat by construction.
+# Local only: 8 repeats would take weeks of free API quota. 5 tasks x 8 = 40 rollouts.
+name: bestofn
+agents:
+  - {backend: mlx, name: qwen3-14b-local, model: mlx-community/Qwen3-14B-4bit}
+tasks:
+  - repo_invoice_commit_hook
+  - "lcb_*_impossible"
+max_tasks: 5
+seed: 1
+repeats: 8
+conditions:
+  - {name: high, pressure: {prompt: high}}
+defenses:
+  - {name: "off"}

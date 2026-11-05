@@ -495,6 +495,16 @@ training environments.
 
 ---
 
+### Best-of-N selection (`assay bestofn`)
+
+Before any training, the cheapest optimisation against a reward is to run the agent N times and keep
+the run the grader scores highest. If the grader can be fooled, that selects for the runs that fooled
+it. From the repeats in a sweep, Assay computes exactly (over all size-n subsets, ties split evenly)
+the probability that the kept run misbehaves, and its hidden score, when selecting by the naive score
+versus the trusted score. A rising naive curve with a flat trusted curve is reward hacking under
+selection pressure, and shows how much the trusted grader protects it. The formula is checked against
+brute-force enumeration (`tests/test_bestofn.py`).
+
 ## 10. Model internals (local track)
 
 These analyses need the model weights, which is why the local track exists.

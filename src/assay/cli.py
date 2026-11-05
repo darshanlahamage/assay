@@ -10,6 +10,7 @@
     assay sweep <experiment.yaml>         run (or resume) an experiment sweep
     assay analyze <run dir>               compare conditions: rates, intervals, tests
     assay internals <run dir>             local track: pressure direction, probe, lead time
+    assay bestofn <run dir>               best-of-N selection: does picking the top run pick cheats?
 """
 
 from __future__ import annotations
@@ -74,6 +75,9 @@ def main(argv: list[str] | None = None) -> int:
     an.add_argument("run")
     an.add_argument("--by-family", action="store_true", help="split results by task family")
 
+    bn = sub.add_parser("bestofn", help="best-of-N selection pressure from a sweep's repeats")
+    bn.add_argument("run")
+
     it = sub.add_parser("internals", help="model-internals analysis of a local-track sweep")
     it.add_argument("run")
     it.add_argument("--permutations", type=int, default=0,
@@ -112,6 +116,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "sweep":
         from assay.sweep import run_sweep
         return run_sweep(args.experiment, args.config, args.dry_run, args.wait_for_quota)
+    if args.cmd == "bestofn":
+        from assay.bestofn import print_bestofn
+        return print_bestofn(Path(args.run))
     if args.cmd == "internals":
         from assay.internals import print_internals
         return print_internals(Path(args.run), args.permutations)
