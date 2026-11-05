@@ -90,3 +90,42 @@ def test_every_backend_builds_from_config(monkeypatch):
     make_backend("gemini", cfg)
     m = make_backend("mlx", cfg)            # does not load the model
     assert m.engine.memory_limit_gb == 14
+
+
+class _Resp:
+    def __init__(self, code, body, headers=None):
+        import json
+        self.status_code, self.headers = code, headers or {}
+        self.text = body if isinstance(body, str) else json.dumps(body)
+        self._body = body
+
+    def json(self):
+        return self._body
+
+
+def test_groq_rate_limit_waits_are_not_failures(monkeypatch):
+    import httpx
+
+    from assay.agent import backends
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.setattr(backends.time, "sleep", lambda s: None)
+    ok = {"choices": [{"message": {"content": "", "reasoning": "r", "tool_calls": [
+        {"function": {"name": "bash", "arguments": '{"command": "ls"}'}}]}}],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 2}}
+    replies = [_Resp(429, "Rate limit reached ... tokens per minute (TPM)", {"retry-after": "3"})] * 20
+    replies.append(_Resp(200, ok))
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: replies.pop(0))
+    c = backends.GroqBackend("m", max_retries=8).complete("s", [{"role": "user", "content": "go"}])
+    assert c.text.strip() == "```bash\nls\n```" and c.thinking == "r"
+
+
+def test_groq_failure_names_the_last_error(monkeypatch):
+    import httpx
+    import pytest
+
+    from assay.agent import backends
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.setattr(backends.time, "sleep", lambda s: None)
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: _Resp(503, "service unavailable"))
+    with pytest.raises(RuntimeError, match="503"):
+        backends.GroqBackend("m", max_retries=3).complete("s", [{"role": "user", "content": "go"}])

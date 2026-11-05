@@ -129,6 +129,8 @@ class GroqBackend:
 
         budget = self.max_prompt_chars
         bad_calls = 0
+        throttled = 0                   # per-minute limit waits: normal, not failures
+        last = ""                       # the last error, for the final message
         attempt = -1
         while attempt < self.max_retries - 1:
             attempt += 1
@@ -141,7 +143,8 @@ class GroqBackend:
                 body["reasoning_effort"] = self.reasoning_effort
             try:
                 r = httpx.post(self.URL, headers=self._headers, json=body, timeout=180)
-            except httpx.TransportError:
+            except httpx.TransportError as e:
+                last = f"{type(e).__name__}: {e}"
                 if attempt == self.max_retries - 1:
                     raise
                 time.sleep(min(60, 2 ** attempt * 2))
@@ -171,6 +174,7 @@ class GroqBackend:
                 return Completion(text="(invalid tool call: arguments were not valid JSON. "
                                        "Use the bash tool with a plain command string.)")
             if r.status_code == 413 or "too large" in text.lower():
+                last = f"{r.status_code} request too large at {budget} characters"
                 budget = int(budget * 0.7)      # request bigger than the per-minute budget
                 continue
             if r.status_code == 429:
@@ -184,14 +188,21 @@ class GroqBackend:
                         attempt -= 1            # waiting for quota is not a failed attempt
                         continue
                     raise QuotaExhausted(f"{self.model}: daily quota exhausted ({text[:300]})")
-                wait = float(r.headers.get("retry-after", 0) or 0)
-                time.sleep(min(90, max(wait, 2 ** attempt)))
+                # Per-minute limit: wait as told. Up to 40 such waits (well over half an
+                # hour) don't count as failed attempts; beyond that, they do.
+                last = f"429 per-minute limit: {text[:200]}"
+                wait = float(r.headers.get("retry-after", 0) or 0) or _retry_in(text) or 0
+                throttled += 1
+                if throttled <= 40:
+                    attempt -= 1
+                time.sleep(min(90, max(wait + 1, 2)))
                 continue
+            last = f"{r.status_code}: {text[:300]}"
             if r.status_code >= 500 and attempt < self.max_retries - 1:
                 time.sleep(min(60, 2 ** attempt * 2))
                 continue
             raise RuntimeError(f"Groq API error {r.status_code}: {text[:500]}")
-        raise RuntimeError("Groq API: retries exhausted")
+        raise RuntimeError(f"Groq API: retries exhausted; last error: {last}")
 
 
 def _retry_in(text: str) -> float | None:
