@@ -12,10 +12,12 @@
 # Size: local 6 tasks x 2 conditions x 4 = 48 each; Groq 24 each (about 5 days of free
 # quota per model, run in parallel with --wait-for-quota).
 name: scale
+# Local agents run in this order. gpt-oss-20b needs ~12.7 GB plus 2 GB left for macOS; if
+# the Mac lacks that when its turn comes, the lane skips it and a re-run picks it up.
 agents:
+  - {backend: mlx, name: qwen3-14b-local, model: mlx-community/Qwen3-14B-4bit, repeats: 4}
   - {backend: mlx, name: gpt-oss-20b-local, model: mlx-community/gpt-oss-20b-MXFP4-Q8,
      top_p: 0.0, top_k: 0, repeats: 4}
-  - {backend: mlx, name: qwen3-14b-local, model: mlx-community/Qwen3-14B-4bit, repeats: 4}
   - {backend: groq, name: gpt-oss-20b-groq, model: openai/gpt-oss-20b, repeats: 2}
   - {backend: groq, name: gpt-oss-120b-groq, model: openai/gpt-oss-120b, repeats: 2}
 tasks:

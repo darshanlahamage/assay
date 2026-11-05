@@ -352,7 +352,7 @@ the weights plus the KV cache (the model's per-token memory of the conversation)
 |---|---|---|---|---|
 | Qwen3-8B (4-bit) | 4.3 GB | 2.7 GB | yes | 200 / 21 tok/s |
 | Qwen3-14B (4-bit) | 7.7 GB | 3.1 GB | yes | 103 / 12 tok/s |
-| gpt-oss-20b (MXFP4, MoE: 21B total, 3.6B active per token) | 11.2 GB | 0.5 GB | yes | measured in §6.2 |
+| gpt-oss-20b (MXFP4, MoE: 21B total, 3.6B active per token) | 11.2 GB | 0.5 GB | only with ~15 GB free (close other apps) | not yet measured |
 | Qwen3-30B-A3B, Qwen3-32B (4-bit) | 16–17 GB | 2–5 GB | no | – |
 | gpt-oss-120b (MXFP4) | 58 GB | – | no | – |
 
@@ -373,6 +373,14 @@ Model choice:
 - **gpt-oss-120b internals are out of reach here.** They need an 80 GB GPU (e.g. a rented H100), and
   a PyTorch version of the activation hooks. Worth doing only if the 20b internals results are
   interesting enough to check at scale.
+
+**Keeping the machine usable.** MLX keeps weights in wired memory, which macOS cannot swap out, and
+mlx-lm raises the wired limit to the GPU's recommended maximum (17.8 GB here) for every generation.
+Loading gpt-oss-20b with Docker and a browser running hung the Mac. The engine therefore caps MLX's
+total and wired memory (`backends.mlx.memory_limit_gb`, default 14), keeps its buffer cache at 1 GB,
+and refuses to load a model unless its weights plus 1.5 GB fit the cap *and* 2 GB would still be
+free for macOS afterwards. Measured with Qwen3-14B under the cap: peak 7.9 GB, free memory never
+below 5.3 GB. A sweep skips a local agent that does not fit and resumes it on a later run.
 
 The private reasoning (gpt-oss "analysis" channel) is kept in the trajectory on both tracks, as
 `thinking` on each step. It is evidence for analysis (does the model say it will take the shortcut

@@ -23,6 +23,7 @@ One base model serves two roles via LoRA:
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -51,10 +52,12 @@ class InferenceEngine:
         model_name: str,
         adapter_path: str | None = None,
         activation_layers: tuple[int, ...] = (),
+        memory_limit_gb: float = 14.0,
     ) -> None:
         self.model_name = model_name
         self.adapter_path = adapter_path
         self.activation_layers = activation_layers
+        self.memory_limit_gb = memory_limit_gb
         self._model: Any = None
         self._tokenizer: Any = None
         self._cache: Any = None             # prefix (KV) cache from the previous call
@@ -66,6 +69,8 @@ class InferenceEngine:
         if self._model is None:
             from mlx_lm import load
 
+            _limit_memory(self.memory_limit_gb)
+            _check_room(self.model_name, self.memory_limit_gb)
             self._model, self._tokenizer = load(self.model_name, adapter_path=self.adapter_path)
             layers = self._model.model.layers
             # Fractions (0.5 = halfway down) resolve against this model's depth.
@@ -198,7 +203,69 @@ class InferenceEngine:
 
     def with_adapter(self, adapter_path: str | None) -> InferenceEngine:
         """A view of the SAME model id with a different LoRA adapter (or none)."""
-        return InferenceEngine(self.model_name, adapter_path, self.activation_layers)
+        return InferenceEngine(self.model_name, adapter_path, self.activation_layers,
+                               self.memory_limit_gb)
+
+
+# -- keeping the Mac usable --------------------------------------------------------------
+# MLX keeps weights in wired memory, which macOS cannot swap out or reclaim, and mlx-lm
+# raises the wired limit to the GPU's recommended maximum (17.8 GB on a 24 GB Mac) for
+# every generation. With Docker and normal apps running, that starves the system and the
+# machine hangs. So: cap MLX's total and wired memory, keep its buffer cache small, and
+# refuse to load a model the machine has no room for.
+
+def _limit_memory(limit_gb: float) -> None:
+    import mlx.core as mx
+    import mlx_lm.generate as gen
+
+    cap = int(limit_gb * 2**30)
+    mx.set_memory_limit(cap)
+    mx.set_wired_limit(cap)
+    mx.set_cache_limit(2**30)                 # freed buffers go back to macOS beyond 1 GB
+    # mlx-lm calls this around every generation to raise the wired limit; use our cap.
+    gen.maybe_set_recommended_wired_limit = lambda: mx.set_wired_limit(cap)
+
+
+def _check_room(model_name: str, limit_gb: float) -> None:
+    """Refuse to load a model that does not fit the cap or the memory free right now."""
+    weights = _local_weights_bytes(model_name)
+    if weights is None:
+        return                                # not downloaded yet: mlx-lm will fetch it
+    need = weights + 1.5 * 2**30              # weights plus room for the KV cache
+    if need > limit_gb * 2**30:
+        raise MemoryError(f"{model_name} needs ~{need / 2**30:.1f} GB, above the "
+                          f"{limit_gb:.0f} GB cap (backends.mlx.memory_limit_gb)")
+    free = _available_bytes()
+    reserve = 2 * 2**30                       # left for macOS and apps after loading
+    if free is not None and need + reserve > free:
+        raise MemoryError(f"{model_name} needs ~{need / 2**30:.1f} GB plus 2 GB left for macOS, "
+                          f"but only {free / 2**30:.1f} GB is free; close apps or stop other models")
+
+
+def _local_weights_bytes(model_name: str) -> int | None:
+    try:
+        from huggingface_hub import snapshot_download
+
+        root = Path(snapshot_download(model_name, local_files_only=True))
+    except Exception:  # noqa: BLE001 — not in the local cache
+        return None
+    total = sum(f.stat().st_size for f in root.glob("*.safetensors"))   # stat follows links
+    return total or None                      # only config files cached: not downloaded
+
+
+def _available_bytes() -> int | None:
+    """Memory macOS can hand out now: free + inactive + purgeable + speculative pages."""
+    import re
+    import subprocess
+
+    try:
+        out = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    page = int(re.search(r"page size of (\d+)", out).group(1))
+    pages = {k.strip(): int(v) for k, v in re.findall(r"^(.+?):\s+(\d+)\.", out, re.M)}
+    keys = ("Pages free", "Pages inactive", "Pages purgeable", "Pages speculative")
+    return page * sum(pages.get(k, 0) for k in keys)
 
 
 def _Recorder(inner: Any, index: int, records: list) -> Any:

@@ -152,9 +152,12 @@ def _lane(name: str, jobs: list[dict], base_cfg: dict, run_dir: Path, run_id: st
     say = lambda m: print(f"[{name}] {m}", flush=True)  # noqa: E731
     backend, backend_key = None, None
     codes[name] = 0
+    skipped: set[str] = set()                 # agents whose model does not fit right now
     for i, j in enumerate(jobs, 1):
         if _STOP.is_set():
             return
+        if j["agent_name"] in skipped:
+            continue
         cfg = copy.deepcopy(base_cfg)
         agent = j["agent"]
         cfg["backends"].setdefault(agent["backend"], {})
@@ -191,6 +194,13 @@ def _lane(name: str, jobs: list[dict], base_cfg: dict, run_dir: Path, run_id: st
             return
         except Exception as e:  # noqa: BLE001 — one broken rollout must not end the lane
             say(f"rollout failed: {type(e).__name__}: {e}")
+            continue
+        if row.error.startswith("MemoryError"):
+            say(f"skipping {j['agent_name']}: {row.error}. Re-run later to resume.")
+            skipped.add(j["agent_name"])
+            backend = None
+            _free_memory()
+            codes[name] = 2
             continue
         say(f"   -> {row.verdicts}  visible={row.proxy_trusted:.2f} hidden={row.true_score:.2f}"
             f"  ({row.duration_s / 60:.1f} min)")

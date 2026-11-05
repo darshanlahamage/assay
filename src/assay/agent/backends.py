@@ -328,7 +328,7 @@ class MLXBackend:
                  enable_thinking: bool = False, adapter_path: str | None = None,
                  activation_layers: tuple = (), max_prompt_chars: int = 80000,
                  top_p: float = 0.0, top_k: int = 0, presence_penalty: float = 0.0,
-                 reasoning_effort: str = "medium") -> None:
+                 reasoning_effort: str = "medium", memory_limit_gb: float = 14.0) -> None:
         from assay.inference.engine import InferenceEngine
 
         self.model = model
@@ -342,7 +342,8 @@ class MLXBackend:
         self.harmony = "gpt-oss" in model
         self.reasoning_effort = reasoning_effort
         self.engine = InferenceEngine(model, adapter_path=adapter_path,
-                                      activation_layers=tuple(activation_layers))
+                                      activation_layers=tuple(activation_layers),
+                                      memory_limit_gb=memory_limit_gb)
 
     def complete(self, system: str, messages: list[dict[str, str]]) -> Completion:
         # Same shortening as the Groq track, so long rollouts fit the context window.
@@ -432,7 +433,7 @@ def make_backend(name: str, cfg: dict) -> Backend:
                           tuple(c.get("activation_layers") or ()),
                           c.get("max_prompt_chars", 80000), c.get("top_p", 0.0),
                           c.get("top_k", 0), c.get("presence_penalty", 0.0),
-                          c.get("reasoning_effort", "medium"))
+                          c.get("reasoning_effort", "medium"), c.get("memory_limit_gb", 14.0))
     if name == "groq":
         return GroqBackend(c["model"], c.get("temperature", 0.7), c.get("max_output_tokens", 4096),
                            c.get("max_prompt_chars", 18000),

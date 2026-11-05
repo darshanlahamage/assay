@@ -58,3 +58,20 @@ def test_tool_history_args_as_dict_for_templates():
                           {"role": "user", "content": "exit code: 0\nx"}], args_as_dict=True)
     assert h[1]["tool_calls"][0]["function"]["arguments"] == {"command": "ls"}
     assert h[2]["role"] == "tool"
+
+
+def test_memory_guard(monkeypatch):
+    import pytest
+
+    from assay.inference import engine
+    GB = 2**30
+    monkeypatch.setattr(engine, "_local_weights_bytes", lambda m: int(11.2 * GB))
+    monkeypatch.setattr(engine, "_available_bytes", lambda: 13 * GB)
+    with pytest.raises(MemoryError, match="only 13.0 GB is free"):
+        engine._check_room("big", 14.0)           # fits the cap, but would leave macOS < 2 GB
+    monkeypatch.setattr(engine, "_available_bytes", lambda: 20 * GB)
+    engine._check_room("big", 14.0)               # enough room
+    with pytest.raises(MemoryError, match="above the 12 GB cap"):
+        engine._check_room("big", 12.0)
+    monkeypatch.setattr(engine, "_local_weights_bytes", lambda m: None)
+    engine._check_room("not-downloaded", 14.0)    # unknown size: no refusal

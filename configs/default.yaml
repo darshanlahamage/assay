@@ -22,6 +22,8 @@ backends:
     adapter_path: null                      # LoRA adapter (RL rounds, later)
     activation_layers: [0.5, 0.75]          # residual stream recorded at these depths
     max_prompt_chars: 80000                 # older outputs shortened beyond this
+    memory_limit_gb: 14                     # hard cap on MLX memory (24 GB Mac + Docker);
+                                            # without it the Mac can hang (DESIGN 6.1)
 
 agent:
   max_steps: 30
