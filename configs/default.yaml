@@ -7,6 +7,7 @@ backends:
     max_output_tokens: 4096
     max_prompt_chars: 18000                 # keeps each request under the per-minute token cap
     reasoning_effort: medium                # gpt-oss; the same on the local track
+    tokens_per_minute: 8000                 # free tier; prompt + reply cap must fit in it
   gemini:                                   # API track (free tier: 20 req/day per model)
     model: gemini-3.5-flash
     temperature: 0.7

@@ -6,6 +6,7 @@ return per-token logprobs and entropies, which the API cannot give.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
@@ -111,7 +112,8 @@ class GroqBackend:
 
     def __init__(self, model: str, temperature: float = 0.7, max_output_tokens: int = 4096,
                  max_prompt_chars: int = 18000, max_retries: int = 8,
-                 quota_wait_max_s: float = 0, reasoning_effort: str | None = None) -> None:
+                 quota_wait_max_s: float = 0, reasoning_effort: str | None = None,
+                 tokens_per_minute: int = 8000) -> None:
         key = os.environ.get("GROQ_API_KEY")
         if not key:
             raise RuntimeError("GROQ_API_KEY is not set (put it in .env)")
@@ -123,11 +125,13 @@ class GroqBackend:
         self.max_retries = max_retries
         self.quota_wait_max_s = quota_wait_max_s
         self.reasoning_effort = reasoning_effort
+        self.tokens_per_minute = tokens_per_minute
 
     def complete(self, system: str, messages: list[dict[str, str]]) -> Completion:
         import httpx
 
         budget = self.max_prompt_chars
+        cut = 0                         # reply-cap reduction learned from 413s
         bad_calls = 0
         throttled = 0                   # per-minute limit waits: normal, not failures
         last = ""                       # the last error, for the final message
@@ -136,8 +140,14 @@ class GroqBackend:
             attempt += 1
             msgs = [{"role": "system", "content": system},
                     *_as_tool_history(_compact(messages, budget))]
+            # Groq counts prompt + reply cap against the per-minute limit, so a request whose
+            # sum exceeds it can never succeed. Size the cap to what the prompt leaves.
+            est_prompt = (sum(len(str(m.get("content") or "")) + len(json.dumps(m.get("tool_calls") or ""))
+                              for m in msgs) + len(json.dumps(_TOOLS))) // 3
+            cap = max(1024, min(self.max_output_tokens,
+                                self.tokens_per_minute - est_prompt - 400) - cut)
             body = {"model": self.model, "messages": msgs, "temperature": self.temperature,
-                    "max_completion_tokens": self.max_output_tokens,
+                    "max_completion_tokens": cap,
                     "tools": _TOOLS, "tool_choice": "auto"}
             if self.reasoning_effort:
                 body["reasoning_effort"] = self.reasoning_effort
@@ -174,8 +184,15 @@ class GroqBackend:
                 return Completion(text="(invalid tool call: arguments were not valid JSON. "
                                        "Use the bash tool with a plain command string.)")
             if r.status_code == 413 or "too large" in text.lower():
-                last = f"{r.status_code} request too large at {budget} characters"
-                budget = int(budget * 0.7)      # request bigger than the per-minute budget
+                # Prompt + reply cap exceed the per-minute limit. Lower the cap by the excess
+                # Groq reports; once the cap is at its floor, shorten the conversation.
+                last = f"{r.status_code} at {budget} characters, reply cap {cap}: {text[:200]}"
+                m = re.search(r"Limit (\d+), Requested (\d+)", text)
+                excess = (int(m.group(2)) - int(m.group(1)) + 200) if m else 1000
+                if cap - excess >= 1024:
+                    cut += excess
+                else:
+                    budget = int(budget * 0.7)
                 continue
             if r.status_code == 429:
                 if _is_daily_quota(text) or "tokens per day" in text.lower() or "(TPD)" in text \
@@ -321,15 +338,25 @@ def _as_tool_history(messages: list[dict[str, str]], args_as_dict: bool = False)
 
 
 def _compact(messages: list[dict[str, str]], max_chars: int) -> list[dict[str, str]]:
-    """Shorten command outputs until the conversation fits in `max_chars`.
+    """Shorten the conversation until it fits in `max_chars`.
 
-    First the oldest outputs (all but the last four messages) are cut to their opening
-    lines. If that is not enough, the recent outputs are cut too, keeping the start and
-    the end of each, oldest first and the newest one last. The task message and the
-    agent's own replies are never shortened.
+    In order, stopping as soon as it fits:
+      1. older command outputs (all but the last four messages) -> their opening lines
+      2. older agent replies over 1500 characters (long scripts, patches) -> head and tail,
+         so the action block stays readable
+      3. recent command outputs -> head and tail, oldest first, the newest last
+    The task message and the last four messages' agent replies are never shortened.
     """
     msgs = [dict(m) for m in messages]
     total = sum(len(m["content"]) for m in msgs)
+
+    def shorten(m: dict, keep: int, note: str) -> None:
+        nonlocal total
+        c = m["content"]
+        short = c[:keep // 2] + f"\n... [{note}] ...\n" + c[-keep // 2:]
+        total -= len(c) - len(short)
+        m["content"] = short
+
     for m in msgs[1:-4]:
         if total <= max_chars:
             return msgs
@@ -337,16 +364,17 @@ def _compact(messages: list[dict[str, str]], max_chars: int) -> list[dict[str, s
             short = m["content"][:300] + "\n... [older output shortened to save space]"
             total -= len(m["content"]) - len(short)
             m["content"] = short
-    for keep in (1500, 600):                    # recent outputs: keep head and tail
+    for m in msgs[1:-4]:
+        if total <= max_chars:
+            return msgs
+        if m["role"] == "assistant" and len(m["content"]) > 1500:
+            shorten(m, 1000, "earlier command shortened to save space")
+    for keep in (1500, 600):
         for m in msgs[max(1, len(msgs) - 4):]:
             if total <= max_chars:
                 return msgs
-            c = m["content"]
-            if m["role"] == "user" and len(c) > keep + 100:
-                short = (c[:keep // 2] + "\n... [output shortened to save space] ...\n"
-                         + c[-keep // 2:])
-                total -= len(c) - len(short)
-                m["content"] = short
+            if m["role"] == "user" and len(m["content"]) > keep + 100:
+                shorten(m, keep, "output shortened to save space")
     return msgs
 
 
@@ -480,7 +508,8 @@ def make_backend(name: str, cfg: dict) -> Backend:
         return GroqBackend(c["model"], c.get("temperature", 0.7), c.get("max_output_tokens", 4096),
                            c.get("max_prompt_chars", 18000),
                            quota_wait_max_s=c.get("quota_wait_max_s", 0),
-                           reasoning_effort=c.get("reasoning_effort"))
+                           reasoning_effort=c.get("reasoning_effort"),
+                           tokens_per_minute=c.get("tokens_per_minute", 8000))
     if name == "script":
         return ScriptedBackend(c["scenario"])
     raise ValueError(f"unknown backend {name!r}")

@@ -166,3 +166,40 @@ def test_groq_output_parse_failure_is_retried(monkeypatch):
     monkeypatch.setattr(httpx, "post", lambda *a, **k: replies.pop(0))
     c = backends.GroqBackend("m").complete("s", [{"role": "user", "content": "go"}])
     assert c.text.strip() == "```bash\npytest -q\n```"
+
+
+def test_groq_reply_cap_fits_the_minute_limit_and_learns_from_413(monkeypatch):
+    import json as _json
+
+    import httpx
+
+    from assay.agent import backends
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.setattr(backends.time, "sleep", lambda s: None)
+    sent = []
+    ok = {"choices": [{"message": {"content": "", "tool_calls": [
+        {"function": {"name": "bash", "arguments": '{"command": "ls"}'}}]}}], "usage": {}}
+    replies = [_Resp(413, "Request too large for model: tokens per minute (TPM): Limit 8000, Requested 9500"),
+               _Resp(200, ok)]
+
+    def post(url, headers, json, timeout):
+        sent.append(json["max_completion_tokens"])
+        return replies.pop(0)
+    monkeypatch.setattr(httpx, "post", post)
+    msgs = [{"role": "user", "content": "y" * 12000}]          # ~4000 tokens of prompt
+    backends.GroqBackend("m", max_prompt_chars=18000).complete("s", msgs)
+    assert sent[0] + 12000 // 3 <= 8000                        # first request already fits
+    assert sent[1] == max(1024, sent[0] - 1700)                # lowered by the reported excess
+
+
+def test_compact_shortens_old_long_replies_but_keeps_the_action_block():
+    from assay.agent import protocol
+    from assay.agent.backends import _compact
+    script = "```bash\npython - <<'PY'\n" + "print(1)\n" * 600 + "PY\n```"
+    msgs = [{"role": "user", "content": "task"}]
+    for i in range(8):
+        msgs += [{"role": "assistant", "content": script}, {"role": "user", "content": "ok"}]
+    out = _compact(msgs, 20000)                # the two recent 4.8k replies stay whole
+    assert sum(len(m["content"]) for m in out) <= 20000
+    assert out[1]["content"] != script and protocol.parse(out[1]["content"]).kind == "bash"
+    assert out[-2]["content"] == script                          # recent reply untouched
