@@ -136,3 +136,18 @@ def test_qwen_think_split():
     assert _split_think("<think>\nlook first\n</think>\n\nOk.\n```bash\nls\n```") == ("Ok.\n```bash\nls\n```", "look first")
     assert _split_think("```bash\nls\n```") == ("```bash\nls\n```", "")
     assert _split_think("<think>still thinking when cut off") == ("", "still thinking when cut off")
+
+
+def test_compact_shortens_recent_outputs_when_needed():
+    from assay.agent.backends import _compact
+    big = "x" * 6000
+    msgs = [{"role": "user", "content": "TASK " * 50}]
+    for i in range(6):
+        msgs += [{"role": "assistant", "content": f"```bash\ncmd {i}\n```"}, {"role": "user", "content": big}]
+    out = _compact(msgs, 8000)
+    assert sum(len(m["content"]) for m in out) <= 8000
+    assert out[0] == msgs[0]                                         # task untouched
+    assert all(o["content"] == m["content"] for o, m in zip(out, msgs) if m["role"] == "assistant")
+    assert out[-1]["content"].startswith("x") and out[-1]["content"].endswith("x")   # head and tail kept
+    small = msgs[:3]
+    assert _compact(small, 100000) == small                          # nothing to do

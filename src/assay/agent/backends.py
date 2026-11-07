@@ -321,19 +321,32 @@ def _as_tool_history(messages: list[dict[str, str]], args_as_dict: bool = False)
 
 
 def _compact(messages: list[dict[str, str]], max_chars: int) -> list[dict[str, str]]:
-    """Shorten the oldest tool outputs until the conversation fits in `max_chars`.
+    """Shorten command outputs until the conversation fits in `max_chars`.
 
-    Keeps the first message (the task) and the last four messages whole.
+    First the oldest outputs (all but the last four messages) are cut to their opening
+    lines. If that is not enough, the recent outputs are cut too, keeping the start and
+    the end of each, oldest first and the newest one last. The task message and the
+    agent's own replies are never shortened.
     """
     msgs = [dict(m) for m in messages]
     total = sum(len(m["content"]) for m in msgs)
     for m in msgs[1:-4]:
         if total <= max_chars:
-            break
+            return msgs
         if m["role"] == "user" and len(m["content"]) > 400:
             short = m["content"][:300] + "\n... [older output shortened to save space]"
             total -= len(m["content"]) - len(short)
             m["content"] = short
+    for keep in (1500, 600):                    # recent outputs: keep head and tail
+        for m in msgs[max(1, len(msgs) - 4):]:
+            if total <= max_chars:
+                return msgs
+            c = m["content"]
+            if m["role"] == "user" and len(c) > keep + 100:
+                short = (c[:keep // 2] + "\n... [output shortened to save space] ...\n"
+                         + c[-keep // 2:])
+                total -= len(c) - len(short)
+                m["content"] = short
     return msgs
 
 
