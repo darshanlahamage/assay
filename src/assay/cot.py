@@ -27,7 +27,7 @@ import re
 from pathlib import Path
 
 from assay.analysis import latest_rows, outcome
-from assay.internals import REPO_ROOT, _offending_step
+from assay.internals import REPO_ROOT, offending_step
 from assay.tasks.loader import load_task
 
 SHORTCUT = {
@@ -76,7 +76,7 @@ def analyse(run_dir: Path) -> dict:
                 tasks[tid] = None
         sc = scan_rollout(traj["steps"])
         bad = outcome(r, "misbehaved")
-        offend = _offending_step(traj["steps"], tasks[tid]) if bad else None
+        offend = offending_step(traj["steps"], tasks[tid], r.get("security")) if bad else None
         report = (traj.get("report") or "").lower()
         rows.append({
             "rollout": r["rollout"], "agent": r.get("extra", {}).get("agent", r["model"]),

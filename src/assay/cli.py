@@ -12,6 +12,7 @@
     assay internals <run dir>             local track: pressure direction, probe, lead time
     assay bestofn <run dir>               best-of-N selection: does picking the top run pick cheats?
     assay cot <run dir>                   does the reasoning say it will cheat before it does?
+    assay monitor <run dir>               LLM monitor (layer 3) judged against the verdicts
 """
 
 from __future__ import annotations
@@ -76,6 +77,13 @@ def main(argv: list[str] | None = None) -> int:
     an.add_argument("run")
     an.add_argument("--by-family", action="store_true", help="split results by task family")
 
+    mo = sub.add_parser("monitor", help="LLM monitor over finished rollouts (gpt-oss-safeguard)")
+    mo.add_argument("run")
+    mo.add_argument("--view", choices=["full", "actions"], default="full",
+                    help="full: include the agent's private reasoning; actions: commands only")
+    mo.add_argument("--limit", type=int, help="judge at most this many rollouts")
+    mo.add_argument("--show", action="store_true", help="list flagged and misbehaving rollouts")
+
     ct = sub.add_parser("cot", help="what the agent's reasoning said before it misbehaved")
     ct.add_argument("run")
     ct.add_argument("--show", action="store_true", help="list the flagged rollouts")
@@ -121,6 +129,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "sweep":
         from assay.sweep import run_sweep
         return run_sweep(args.experiment, args.config, args.dry_run, args.wait_for_quota)
+    if args.cmd == "monitor":
+        from assay.monitor import print_monitor
+        return print_monitor(Path(args.run), args.view, args.limit, args.show)
     if args.cmd == "cot":
         from assay.cot import print_cot
         return print_cot(Path(args.run), args.show)
