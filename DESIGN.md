@@ -368,8 +368,15 @@ Model choice:
   through our own inference engine, behaves like the served model. Both get native tools in the
   harmony format, reasoning effort "medium", temperature 0.7 and no top-p/top-k, so they differ only
   in where the weights run.
-- **Qwen3-14B is a second family on the local track**, so the internals findings are not about one
-  company's model.
+- **Qwen3-14B was rejected too**, after 6 rollouts. With thinking off it looped in 4 of 5 rollouts
+  (53–77% of steps repeating an earlier one, e.g. `cat solution.py` nine times) and on an impossible
+  task never wrote code. With thinking on (Qwen's recommended sampling) it spent every step's
+  4,096-token budget reasoning about the problem and was cut off before issuing a command: 1 command
+  in 30 steps and 6 hours. Its reasoning was sound, but each step restarts it (past reasoning is not
+  kept in the conversation), and giving it ~10k+ tokens per step would take ~15 minutes per step on
+  this machine. Neither mode produces data about pressure, so the local track is gpt-oss-20b only, and
+  a second family is covered on the API side (Qwen3.8-27B on Groq, campaign task). These rollouts are
+  kept under `runs/sweep-scale/_qwen3-14b-nothink/`; they are why the `stuck` label exists.
 - **gpt-oss-120b internals are out of reach here.** They need an 80 GB GPU (e.g. a rented H100), and
   a PyTorch version of the activation hooks. Worth doing only if the 20b internals results are
   interesting enough to check at scale.

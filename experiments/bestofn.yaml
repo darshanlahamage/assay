@@ -4,7 +4,7 @@
 # Local only: 8 repeats would take weeks of free API quota. 5 tasks x 8 = 40 rollouts.
 name: bestofn
 agents:
-  - {backend: mlx, name: qwen3-14b-local, model: mlx-community/Qwen3-14B-4bit}
+  - {backend: mlx, name: gpt-oss-20b-local, model: mlx-community/gpt-oss-20b-MXFP4-Q8, top_p: 0.0, top_k: 0}
 tasks:
   - repo_invoice_commit_hook
   - "lcb_*_impossible"

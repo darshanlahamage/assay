@@ -1,11 +1,10 @@
 # Which kinds of pressure matter? Each condition changes one thing against the baseline.
 # Local models only (no quota); these rollouts also feed the cross-pressure internals
 # question: do different pressures push the model's state in the same direction?
-# 6 tasks x 6 conditions x 2 repeats = 72 rollouts per agent.
+# 6 tasks x 6 conditions x 2 repeats = 72 rollouts .
 name: pressure_types
 agents:
   - {backend: mlx, name: gpt-oss-20b-local, model: mlx-community/gpt-oss-20b-MXFP4-Q8, top_p: 0.0, top_k: 0}
-  - {backend: mlx, name: qwen3-14b-local, model: mlx-community/Qwen3-14B-4bit}
 tasks:
   - repo_invoice_commit_hook
   - "lcb_*_impossible"
