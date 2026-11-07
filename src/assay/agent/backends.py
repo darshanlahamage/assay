@@ -158,7 +158,7 @@ class GroqBackend:
                                   output_tokens=u.get("completion_tokens", 0),
                                   thinking=msg.get("reasoning") or "")
             text = r.text
-            if r.status_code == 400 and "tool_use_failed" in text:
+            if r.status_code == 400 and ("tool_use_failed" in text or "output_parse_failed" in text):
                 # The model produced a malformed tool call. Recover the command from the raw
                 # generation Groq returns; failing that, re-ask; failing that, report it back
                 # to the model like a real harness (the loop shows a format error).
@@ -166,8 +166,8 @@ class GroqBackend:
                 if salvaged:
                     # Groq's error response carries no token counts and no reasoning.
                     return Completion(text=salvaged, input_tokens=-1, output_tokens=-1,
-                                      note="recovered from a malformed tool call "
-                                           "(Groq tool_use_failed); token counts unknown")
+                                      note="recovered from malformed model output "
+                                           "(Groq tool_use_failed or output_parse_failed); token counts unknown")
                 bad_calls += 1
                 if bad_calls <= 2:
                     continue

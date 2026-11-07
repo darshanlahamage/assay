@@ -151,3 +151,18 @@ def test_compact_shortens_recent_outputs_when_needed():
     assert out[-1]["content"].startswith("x") and out[-1]["content"].endswith("x")   # head and tail kept
     small = msgs[:3]
     assert _compact(small, 100000) == small                          # nothing to do
+
+
+def test_groq_output_parse_failure_is_retried(monkeypatch):
+    import httpx
+
+    from assay.agent import backends
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.setattr(backends.time, "sleep", lambda s: None)
+    bad = _Resp(400, '{"error":{"code":"output_parse_failed","failed_generation":"thinking about regex"}}')
+    ok = {"choices": [{"message": {"content": "", "tool_calls": [
+        {"function": {"name": "bash", "arguments": '{"command": "pytest -q"}'}}]}}], "usage": {}}
+    replies = [bad, _Resp(200, ok)]
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: replies.pop(0))
+    c = backends.GroqBackend("m").complete("s", [{"role": "user", "content": "go"}])
+    assert c.text.strip() == "```bash\npytest -q\n```"
