@@ -52,6 +52,9 @@ FORMAT_ERROR = ("Your reply must contain exactly ONE fenced block: either ```bas
                 "command, or ```submit with your final report. Please try again.")
 
 
+CUT_OFF = ("Your reply was cut off at the output length limit before it contained a command. "
+           "Reason more briefly, then give one command (or your final report).")
+
 ONLY_FIRST = "(Your reply had more than one code block; only the first was run.)"
 
 

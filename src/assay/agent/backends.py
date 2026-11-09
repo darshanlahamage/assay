@@ -113,7 +113,7 @@ class GroqBackend:
     def __init__(self, model: str, temperature: float = 0.7, max_output_tokens: int = 4096,
                  max_prompt_chars: int = 18000, max_retries: int = 8,
                  quota_wait_max_s: float = 0, reasoning_effort: str | None = None,
-                 tokens_per_minute: int = 8000) -> None:
+                 tokens_per_minute: int = 8000, min_reply_tokens: int = 3500) -> None:
         key = os.environ.get("GROQ_API_KEY")
         if not key:
             raise RuntimeError("GROQ_API_KEY is not set (put it in .env)")
@@ -126,6 +126,24 @@ class GroqBackend:
         self.quota_wait_max_s = quota_wait_max_s
         self.reasoning_effort = reasoning_effort
         self.tokens_per_minute = tokens_per_minute
+        self.min_reply_tokens = min_reply_tokens
+
+    def _request(self, system: str, messages: list[dict[str, str]], budget: int, cut: int):
+        """Messages and reply cap for one request. Groq counts prompt + reply cap against the
+        per-minute limit, so the two share it. The reply keeps at least `min_reply_tokens`
+        (a reasoning model cut off mid-thought returns no command at all); the conversation
+        is shortened further until that fits."""
+        while True:
+            msgs = [{"role": "system", "content": system},
+                    *_as_tool_history(_compact(messages, budget))]
+            est_prompt = (sum(len(str(m.get("content") or "")) + len(json.dumps(m.get("tool_calls") or ""))
+                              for m in msgs) + len(json.dumps(_TOOLS))) // 3
+            room = self.tokens_per_minute - est_prompt - 400
+            if room >= self.min_reply_tokens or budget <= 4000:
+                break
+            budget = int(budget * 0.85)
+        cap = max(1024, min(self.max_output_tokens, room) - cut)
+        return msgs, cap, budget
 
     def complete(self, system: str, messages: list[dict[str, str]]) -> Completion:
         import httpx
@@ -138,14 +156,7 @@ class GroqBackend:
         attempt = -1
         while attempt < self.max_retries - 1:
             attempt += 1
-            msgs = [{"role": "system", "content": system},
-                    *_as_tool_history(_compact(messages, budget))]
-            # Groq counts prompt + reply cap against the per-minute limit, so a request whose
-            # sum exceeds it can never succeed. Size the cap to what the prompt leaves.
-            est_prompt = (sum(len(str(m.get("content") or "")) + len(json.dumps(m.get("tool_calls") or ""))
-                              for m in msgs) + len(json.dumps(_TOOLS))) // 3
-            cap = max(1024, min(self.max_output_tokens,
-                                self.tokens_per_minute - est_prompt - 400) - cut)
+            msgs, cap, budget = self._request(system, messages, budget, cut)
             body = {"model": self.model, "messages": msgs, "temperature": self.temperature,
                     "max_completion_tokens": cap,
                     "tools": _TOOLS, "tool_choice": "auto"}
@@ -162,11 +173,14 @@ class GroqBackend:
             if r.status_code == 200:
                 d = r.json()
                 u = d.get("usage") or {}
-                msg = d["choices"][0]["message"]
+                choice = d["choices"][0]
+                msg = choice["message"]
+                cutoff = choice.get("finish_reason") == "length"
                 return Completion(text=_tool_calls_to_text(msg),
                                   input_tokens=u.get("prompt_tokens", 0),
                                   output_tokens=u.get("completion_tokens", 0),
-                                  thinking=msg.get("reasoning") or "")
+                                  thinking=msg.get("reasoning") or "",
+                                  note=f"reply cut off at the length cap ({cap} tokens)" if cutoff else "")
             text = r.text
             if r.status_code == 400 and ("tool_use_failed" in text or "output_parse_failed" in text):
                 # The model produced a malformed tool call. Recover the command from the raw

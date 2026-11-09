@@ -79,7 +79,8 @@ class AgentLoop:
                 return traj
 
             if action.kind == "format_error":
-                observation = protocol.FORMAT_ERROR
+                observation = (protocol.CUT_OFF if c.note.startswith("reply cut off")
+                               else protocol.FORMAT_ERROR)
             else:
                 r = container.exec(action.content, timeout_s=self.config.command_timeout_s)
                 step.command, step.output = action.content, r.output

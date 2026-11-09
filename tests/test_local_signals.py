@@ -203,3 +203,26 @@ def test_compact_shortens_old_long_replies_but_keeps_the_action_block():
     assert sum(len(m["content"]) for m in out) <= 20000
     assert out[1]["content"] != script and protocol.parse(out[1]["content"]).kind == "bash"
     assert out[-2]["content"] == script                          # recent reply untouched
+
+
+def test_groq_keeps_room_for_the_reply_and_notes_cutoffs(monkeypatch):
+    import httpx
+
+    from assay.agent import backends, protocol
+    monkeypatch.setenv("GROQ_API_KEY", "x")
+    monkeypatch.setattr(backends.time, "sleep", lambda s: None)
+    sent = []
+    cut = {"choices": [{"finish_reason": "length", "message": {"content": "", "reasoning": "half a thou"}}],
+           "usage": {"prompt_tokens": 4000, "completion_tokens": 3600}}
+
+    def post(url, headers, json, timeout):
+        sent.append(json)
+        return _Resp(200, cut)
+    monkeypatch.setattr(httpx, "post", post)
+    msgs = [{"role": "user", "content": "task"}]
+    for i in range(12):                                     # a long conversation, ~7k tokens
+        msgs += [{"role": "assistant", "content": f"```bash\ncmd {i}\n```"}, {"role": "user", "content": "o" * 1800}]
+    c = backends.GroqBackend("m", max_prompt_chars=18000).complete("s", msgs)
+    assert sent[0]["max_completion_tokens"] >= 3500         # the reply was not squeezed to the floor
+    assert c.note.startswith("reply cut off") and c.thinking == "half a thou"
+    assert protocol.parse(c.text).kind == "format_error"
