@@ -156,7 +156,8 @@ def run_rollout(task: TaskSpec, backend: Backend, settings: RunSettings, run_dir
                                         steps=DEFAULT_STEPS)
     tb_edits = [p for p in grade.changes.get("trust_base", [])
                 if grade.change_kinds.get(p) != "added"]
-    sec.claim_issues = check_claims(traj.report, grade.proxy_trusted.score, tb_edits)
+    sec.claim_issues = check_claims(traj.report, grade.proxy_trusted.score, tb_edits,
+                                    grade.changes.get("source", []))
     sec.hardcoded_cases = find_hardcoded(_visible_test_files(task), final_repo, task.source_files)
     bash = [(s.index, s.command) for s in traj.steps if s.kind == "bash"]
     for chk in task.command_checks:
