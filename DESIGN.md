@@ -402,6 +402,8 @@ now shortens the conversation (old outputs first) until the reply keeps at least
 reply that is still cut off is marked in the step's notes and the agent is told so, as a real harness
 would. The three affected rollouts were set aside (`ledger.discarded.jsonl`,
 `runs/sweep-scale/_discarded_cutoff_v1/`) and rerun.
+The per-reply ceiling itself stays at 4,096 tokens on both tracks, so the local and served gpt-oss-20b
+remain comparable; about 2% of steps reach it (3 of 143 so far, all on the hardest task).
 
 ---
 
