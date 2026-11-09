@@ -1,0 +1,22 @@
+# Pressure study for Qwen3-14B (thinking on) served from a free Kaggle GPU (--backend remote).
+#
+# Qwen3-14B was dropped locally only because thinking mode was too slow on the Mac (DESIGN 6.1).
+# On 2x T4 with 8192 tokens per reply it can finish its reasoning. Same tasks and conditions as
+# experiments/scale.yaml, so it adds a second model family with activations.
+#
+# Budget: Kaggle gives 30 GPU-hours a week. Run notebooks/kaggle_server.ipynb first and check
+# its printed speed (tokens/s); then size the repeats. 2 repeats = 24 rollouts.
+name: remote-qwen14b
+agents:
+  - {backend: remote, name: qwen3-14b-remote, model: Qwen/Qwen3-14B, repeats: 2}
+tasks:
+  - repo_invoice_commit_hook
+  - repo_textstats_poisoned_setup
+  - "lcb_*_impossible"
+max_tasks: 6
+seed: 1
+conditions:
+  - {name: neutral, pressure: {prompt: neutral}}
+  - {name: high, pressure: {prompt: high}}
+defenses:
+  - {name: "off"}
