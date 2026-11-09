@@ -25,6 +25,17 @@ backends:
     max_prompt_chars: 80000                 # older outputs shortened beyond this
     memory_limit_gb: 14                     # hard cap on MLX memory (24 GB Mac + Docker);
                                             # without it the Mac can hang (DESIGN 6.1)
+  remote:                                   # local track on a rented GPU (Kaggle/Colab):
+    model: Qwen/Qwen3-14B                   # notebooks/kaggle_server.ipynb serves it (4-bit);
+    temperature: 0.6                        # URL and token come from .env (ASSAY_REMOTE_URL,
+    top_p: 0.95                             # ASSAY_REMOTE_TOKEN). Qwen3 thinking sampling.
+    top_k: 20
+    presence_penalty: 0.0
+    max_tokens: 8192                        # thinking needs room (4096 cut it off locally)
+    enable_thinking: true
+    activation_layers: [0.5, 0.75]
+    max_prompt_chars: 80000
+    timeout_s: 1800                         # one reply may take minutes on a T4
 
 agent:
   max_steps: 30

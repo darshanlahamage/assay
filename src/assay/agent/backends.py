@@ -437,6 +437,140 @@ class MLXBackend:
                           activations=out.activations, thinking=thinking)
 
 
+class RemoteBackend:
+    """Local-track model served from a rented GPU (Kaggle / Colab), harness unchanged.
+
+    The GPU machine runs `assay/inference/torch_server.py` behind a tunnel. This backend
+    sends it the conversation and gets back what MLXBackend gets from the local engine:
+    raw text (parsed here the same way), logprobs, entropies and activations. Commands
+    still run only in the Mac's Docker sandbox; the server never executes anything.
+
+    Free GPU sessions end (Kaggle: 12 h). When the server is unreachable the backend waits
+    and retries the same step, re-reading ASSAY_REMOTE_URL / ASSAY_REMOTE_TOKEN from .env
+    each time, so pasting a new session's URL there resumes the sweep where it stopped.
+    """
+
+    name = "remote"
+
+    def __init__(self, model: str, temperature: float = 0.7, max_tokens: int = 4096,
+                 enable_thinking: bool = False, activation_layers: tuple = (),
+                 max_prompt_chars: int = 80000, top_p: float = 0.0, top_k: int = 0,
+                 presence_penalty: float = 0.0, reasoning_effort: str = "medium",
+                 quota_wait_max_s: float = 0, timeout_s: float = 1800) -> None:
+        self.model = model
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.enable_thinking = enable_thinking
+        self.activation_layers = list(activation_layers)
+        self.max_prompt_chars = max_prompt_chars
+        self.sampling = {"top_p": top_p, "top_k": top_k, "presence_penalty": presence_penalty}
+        self.harmony = "gpt-oss" in model
+        self.reasoning_effort = reasoning_effort
+        self.wait_max_s = max(quota_wait_max_s, 600)    # always ride out short outages
+        self.timeout_s = timeout_s
+
+    def _request_body(self, system: str, messages: list[dict[str, str]]) -> dict:
+        messages = _compact(messages, self.max_prompt_chars)
+        if self.harmony:
+            msgs = [{"role": "system", "content": system}, *_as_tool_history(messages, args_as_dict=True)]
+            extra = {"tools": _TOOLS, "template": {"reasoning_effort": self.reasoning_effort}}
+        else:
+            msgs = [{"role": "system", "content": system}, *messages]
+            extra = {"template": {"enable_thinking": self.enable_thinking}}
+        return {"model": self.model, "messages": msgs, "max_tokens": self.max_tokens,
+                "temperature": self.temperature, **self.sampling,
+                "activation_layers": self.activation_layers, **extra}
+
+    def complete(self, system: str, messages: list[dict[str, str]]) -> Completion:
+        """Submit the step as a job, then poll for it. Tunnels cut single requests off at
+        ~100 s and a reply can take minutes; a job also survives a dropped tunnel."""
+        import uuid
+
+        import httpx
+
+        body = {**self._request_body(system, messages), "id": uuid.uuid4().hex}
+        submitted, down_s, running_s, last = False, 0.0, 0.0, ""
+        while True:
+            url, token = _env_value("ASSAY_REMOTE_URL"), _env_value("ASSAY_REMOTE_TOKEN")
+            ok = False
+            if url and token:
+                h = {"Authorization": f"Bearer {token}"}
+                base = url.rstrip("/")
+                try:
+                    if not submitted:
+                        r = httpx.post(base + "/jobs", json=body, headers=h, timeout=60)
+                        submitted = ok = r.status_code == 200
+                    else:
+                        r = httpx.get(f"{base}/jobs/{body['id']}", headers=h, timeout=60)
+                        if r.status_code == 404:        # server restarted: the job is gone
+                            submitted, ok = False, True
+                        elif r.status_code == 200:
+                            ok = True
+                            d = r.json()
+                            if d.get("status") == "done":
+                                return self._completion(d)
+                            if d.get("status") == "error":
+                                if "non-finite" in d.get("error", "") or "out of memory" in d.get("error", "").lower():
+                                    submitted = False   # transient on the GPU: try the step again
+                                else:
+                                    raise RuntimeError(f"remote server error: {d['error'][:500]}")
+                    if not ok:
+                        last = f"{r.status_code}: {r.text[:200]}"
+                        if r.status_code == 401:
+                            last += " (token in .env does not match the server's)"
+                except httpx.TransportError as e:
+                    last = f"{type(e).__name__}: {e}"
+            else:
+                last = "ASSAY_REMOTE_URL / ASSAY_REMOTE_TOKEN not set in .env"
+            if ok:
+                down_s = 0.0
+                if submitted:
+                    running_s += 5
+                    if running_s > self.timeout_s:
+                        raise RuntimeError(f"remote reply took over {self.timeout_s:.0f} s")
+                    time.sleep(5)
+                continue
+            if down_s >= self.wait_max_s:
+                raise QuotaExhausted(f"remote GPU server unreachable for {down_s / 60:.0f} min: {last}")
+            if down_s % 600 == 0:
+                print(f"      [remote GPU server unavailable ({last[:120]}); retrying every minute. "
+                      f"Start the notebook and put its URL/token in .env]", flush=True)
+            time.sleep(60)
+            down_s += 60
+
+    def _completion(self, d: dict) -> Completion:
+        raw = d.get("text", "")
+        text, thinking = (_parse_harmony(raw) if self.harmony else _split_think(raw))
+        acts = {}
+        if d.get("activations"):
+            import base64
+            import io
+
+            import numpy as np
+
+            with np.load(io.BytesIO(base64.b64decode(d["activations"]))) as z:
+                acts = {k: z[k] for k in z.files}
+        cut = d.get("finish_reason") == "length"
+        return Completion(text=text, input_tokens=d.get("prompt_tokens", 0),
+                          output_tokens=d.get("output_tokens", 0),
+                          logprobs=d.get("logprobs") or [], entropies=d.get("entropies") or [],
+                          activations=acts, thinking=thinking,
+                          note=f"reply cut off at the length cap ({self.max_tokens} tokens)" if cut else "")
+
+
+def _env_value(name: str) -> str:
+    """Current value from .env (re-read each call, so a new URL is picked up), else os.environ."""
+    env = Path(__file__).resolve().parents[3] / ".env"
+    try:
+        for line in env.read_text().splitlines():
+            k, _, v = line.partition("=")
+            if k.strip() == name and v.strip():
+                return v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return os.environ.get(name, "")
+
+
 def _split_think(raw: str) -> tuple[str, str]:
     """Qwen3 thinking mode: "<think>reasoning</think>reply" -> (reply, reasoning).
 
@@ -524,6 +658,12 @@ def make_backend(name: str, cfg: dict) -> Backend:
                            quota_wait_max_s=c.get("quota_wait_max_s", 0),
                            reasoning_effort=c.get("reasoning_effort"),
                            tokens_per_minute=c.get("tokens_per_minute", 8000))
+    if name == "remote":
+        return RemoteBackend(c["model"], c.get("temperature", 0.7), c.get("max_tokens", 4096),
+                             c.get("enable_thinking", False), tuple(c.get("activation_layers") or ()),
+                             c.get("max_prompt_chars", 80000), c.get("top_p", 0.0), c.get("top_k", 0),
+                             c.get("presence_penalty", 0.0), c.get("reasoning_effort", "medium"),
+                             c.get("quota_wait_max_s", 0), c.get("timeout_s", 1800))
     if name == "script":
         return ScriptedBackend(c["scenario"])
     raise ValueError(f"unknown backend {name!r}")

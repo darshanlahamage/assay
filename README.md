@@ -103,6 +103,13 @@ echo "GROQ_API_KEY=..." >> .env          # API track; .env is gitignored
 ./.venv/bin/assay internals runs/sweep-scale --permutations 100 # local agents: probes, directions
 ./.venv/bin/assay bestofn runs/sweep-scale                      # does keeping the top run pick cheats?
 ./.venv/bin/assay cot runs/sweep-scale --show                   # did the reasoning say so beforehand?
+./.venv/bin/assay monitor runs/sweep-scale --view full          # LLM monitor vs. the verdicts
+
+# Local track on a free Kaggle GPU (2x T4): the model runs there, everything else here.
+# Upload notebooks/kaggle_server.ipynb to Kaggle (GPU T4 x2, Internet on), Run All, and
+# paste the two lines it prints (ASSAY_REMOTE_URL=..., ASSAY_REMOTE_TOKEN=...) into .env.
+./.venv/bin/assay run --task repo_invoice_commit_hook --backend remote   # Qwen3-14B, 4-bit
+./.venv/bin/python tools/make_kaggle_notebook.py                          # after editing the server
 
 # Pressure on a single run
 ./.venv/bin/assay run --task benchmark/repo_invoice_commit_hook --backend groq \

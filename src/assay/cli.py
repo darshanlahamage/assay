@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     target = p.add_mutually_exclusive_group(required=True)
     target.add_argument("--task", help="one task directory")
     target.add_argument("--suite", help="directory of task directories")
-    p.add_argument("--backend", choices=["groq", "gemini", "mlx", "script"], default="gemini")
+    p.add_argument("--backend", choices=["groq", "gemini", "mlx", "remote", "script"], default="gemini")
     p.add_argument("--scenario", help="scenario file for --backend script (see scenarios/)")
     p.add_argument("--model", help="override the backend's model")
     p.add_argument("-n", "--repeats", type=int, default=1, help="rollouts per task")
