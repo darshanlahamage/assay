@@ -38,6 +38,7 @@ It never executes anything the agent writes.
 CONFIG = """\
 MODEL = "Qwen/Qwen3-14B"     # or "Qwen/Qwen3-32B"
 QUANT = "4bit"               # T4: 4bit (nf4). "none" only for small models
+DEVICE_MAP = "single"        # 14B 4-bit (~10 GB) fits one T4: faster. 32B: "auto" (both cards)
 PORT = 8000
 import os
 os.environ["HF_HOME"] = "/tmp/hf"          # the model download is large; /kaggle/working holds 20 GB
@@ -53,7 +54,8 @@ import secrets, subprocess, sys, time
 TOKEN = secrets.token_urlsafe(24)
 log = open("/tmp/server.log", "w")
 server = subprocess.Popen([sys.executable, "torch_server.py", "--model", MODEL, "--quant", QUANT,
-                           "--port", str(PORT), "--token", TOKEN], stdout=log, stderr=subprocess.STDOUT)
+                           "--port", str(PORT), "--token", TOKEN,
+                           "--device-map", DEVICE_MAP], stdout=log, stderr=subprocess.STDOUT)
 # Download (~30 GB for 14B) and 4-bit load take ~10-15 minutes.
 while server.poll() is None and "serving" not in open("/tmp/server.log").read():
     time.sleep(15)
@@ -80,7 +82,7 @@ assert out["activations"] and all(x == x for x in out["entropies"]), "NaN: try Q
 TUNNEL = """\
 # Public HTTPS URL for the Mac (Cloudflare quick tunnel; no account needed).
 import re
-!wget -q -O /tmp/cloudflared https://github.com/cloudflare/cloudflared/releases/download/2026.10.3/cloudflared-linux-amd64
+!test -x /tmp/cloudflared || wget -q -O /tmp/cloudflared https://github.com/cloudflare/cloudflared/releases/download/2026.10.3/cloudflared-linux-amd64
 !chmod +x /tmp/cloudflared
 tlog = open("/tmp/tunnel.log", "w")
 tunnel = subprocess.Popen(["/tmp/cloudflared", "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{PORT}"],

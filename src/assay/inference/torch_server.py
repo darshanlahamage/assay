@@ -93,14 +93,17 @@ def pack(arrays: dict) -> str:
 
 
 class Engine:
-    def __init__(self, model: str, quant: str = "4bit", dtype: str = "float16") -> None:
+    def __init__(self, model: str, quant: str = "4bit", dtype: str = "float16",
+                 device_map: str = "auto") -> None:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
         self.torch = torch
         self.name = model
         # fp16: T4s have no bf16. float32 for CPU smoke tests.
-        kw: dict[str, Any] = {"device_map": "auto", "dtype": getattr(torch, dtype)}
+        # "single": the whole model on GPU 0 (no hop between cards per token) when it fits.
+        dm: Any = {"": 0} if device_map == "single" and torch.cuda.is_available() else "auto"
+        kw: dict[str, Any] = {"device_map": dm, "dtype": getattr(torch, dtype)}
         if quant == "4bit":
             kw["quantization_config"] = BitsAndBytesConfig(
                 load_in_4bit=True, bnb_4bit_quant_type="nf4",
@@ -127,7 +130,7 @@ class Engine:
         for i in layers:
             def fn(_m, _inp, out, i=i):
                 h = out[0] if isinstance(out, tuple) else out
-                self.records.append((i, h.shape[1], h[0, -1].float().cpu().numpy()))
+                self.records.append((i, h.shape[1], h[0, -1].detach().float()))   # stays on GPU
             self._handles.append(self.layers[i].register_forward_hook(fn))
         self.hooked = layers
 
@@ -145,8 +148,6 @@ class Engine:
         presence = float(req.get("presence_penalty", 0.0))
         layers = layer_indices(req.get("activation_layers") or [], len(self.layers))
         seed = req.get("seed")
-        gen_ = torch.Generator(device="cpu")
-        gen_.manual_seed(int(seed) if seed is not None else int(time.time_ns() % 2**31))
 
         with self.lock, torch.inference_mode():
             self._hook(layers)
@@ -170,13 +171,17 @@ class Engine:
             device = self.model.get_input_embeddings().weight.device
             ids = torch.tensor([suffix], device=device)
             out_ids: list[int] = []
-            logprobs, entropies = [], []
-            seen = torch.zeros(self.model.config.vocab_size, dtype=torch.bool)
+            lps, ents = [], []                       # GPU scalars; copied once at the end
+            vocab = self.model.config.vocab_size
+            out_dev = self.model.get_output_embeddings().weight.device
+            seen = torch.zeros(vocab, dtype=torch.bool, device=out_dev)
+            gen_ = torch.Generator(device=out_dev)
+            gen_.manual_seed(int(seed) if seed is not None else int(time.time_ns() % 2**31))
             try:
                 for _ in range(max_tokens):
+                    # Sampling stays on the GPU: only the chosen token id comes back per step.
                     logits = self.model(input_ids=ids, past_key_values=self.cache,
-                                        use_cache=True).logits[0, -1].float().cpu()
-                    logits = logits[: seen.shape[0]]
+                                        use_cache=True).logits[0, -1, :vocab].float()
                     if presence and out_ids:
                         logits = logits - presence * seen.float()
                     lp = torch.log_softmax(logits, -1)
@@ -195,18 +200,21 @@ class Engine:
                             p = torch.zeros_like(p).scatter(0, si, sp)
                             p = p / p.sum()
                         t = int(torch.multinomial(p, 1, generator=gen_))
-                    logprobs.append(float(lp[t]))
-                    entropies.append(float(-(lp.exp() * lp).nan_to_num().sum()))
-                    if not torch.isfinite(lp[t]):
-                        raise FloatingPointError("non-finite logits (fp16 overflow?)")
+                    lps.append(lp[t])
+                    ents.append(-(lp.exp() * lp).nan_to_num().sum())
                     out_ids.append(t)
                     seen[t] = True
                     if t in self.eos:
                         break
                     ids = torch.tensor([[t]], device=device)
+                logprobs = torch.stack(lps).cpu().tolist() if lps else []
+                entropies = torch.stack(ents).cpu().tolist() if ents else []
+                if not all(x == x and abs(x) != float("inf") for x in logprobs):
+                    raise FloatingPointError("non-finite logits (fp16 overflow?)")
             except BaseException:
                 self.cache, self.cache_tokens = None, []
                 raise
+            self.records[:] = [(i, n, h.cpu().numpy()) for i, n, h in self.records]
             held = tokens + out_ids
             n_cached = self.cache.get_seq_length()
             self.cache_tokens = held[:n_cached]
@@ -299,9 +307,10 @@ def main() -> None:
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--token", default=None)
     ap.add_argument("--dtype", default="float16", choices=["float16", "float32", "bfloat16"])
+    ap.add_argument("--device-map", default="auto", choices=["auto", "single"])
     a = ap.parse_args()
     token = a.token or secrets.token_urlsafe(24)
-    engine = Engine(a.model, a.quant, a.dtype)
+    engine = Engine(a.model, a.quant, a.dtype, a.device_map)
     serve(engine, token, a.port)
     print(f"serving {a.model} on 127.0.0.1:{a.port}\nASSAY_REMOTE_TOKEN={token}", flush=True)
     while True:
